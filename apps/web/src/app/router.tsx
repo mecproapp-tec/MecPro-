@@ -5,15 +5,16 @@ import Login from "../pages/public/Login/Login"
 import Register from "../pages/public/Register/Register"
 
 // Páginas privadas
+// Certifique-se de que esses arquivos existem nos caminhos indicados
 import Dashboard from "../pages/private/Dashboard/Dashboard"
-import Clients from "../pages/private/Clients/Clients"
-import Estimates from "../pages/private/Estimates/Estimates"
-import Invoices from "../pages/private/Invoices/Invoices"
+import Clients from "../pages/private/Clientes/Clientes"        // pasta "Clientes"
+import Estimates from "../pages/private/Orcamentos/Orcamentos"  // pasta "Orcamentos"
+import Invoices from "../pages/private/Faturas/Faturas"         // pasta "Faturas"
 import Admin from "../pages/private/Admin/Admin"
 
 // Layout e Guard
-import AppLayout from "../layouts/AppLayout"
-import PrivateRoute from "../routes/PrivateRoute"
+import AuthLayout from "../layouts/AuthLayout"                 // layout autenticado
+import PrivateRoute from "../components/guards/PrivateRoute"   // guarda de rota
 
 export default function Router() {
   return (
@@ -23,8 +24,8 @@ export default function Router() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Rotas privadas */}
-        <Route element={<PrivateRoute><AppLayout /></PrivateRoute>}>
+        {/* Rotas privadas (protegidas por PrivateRoute) */}
+        <Route element={<PrivateRoute><AuthLayout /></PrivateRoute>}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/estimates" element={<Estimates />} />
@@ -32,7 +33,7 @@ export default function Router() {
           <Route path="/admin" element={<Admin />} />
         </Route>
 
-        {/* Redirect padrão */}
+        {/* Redirecionamento padrão */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
