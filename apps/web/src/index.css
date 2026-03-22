@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/* ===============================
+   ANIMAÇÃO SLIDE-IN
+=============================== */
+@keyframes slide-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out forwards;
+}
+
+/* ===============================
+   CURSOR E SELEÇÃO GLOBAL
+=============================== */
+
+/* Inputs e textareas readonly ficam sem cursor e não selecionáveis */
+input[readonly],
+textarea[readonly] {
+  caret-color: transparent;
+  cursor: default;
+  user-select: none;
+  background-color: var(--color-gray-100, #f3f4f6);
+  color: var(--color-gray-700, #374151);
+}
+
+/* Divs ou spans de visualização automáticas */
+.no-text-cursor {
+  caret-color: transparent;
+  cursor: default;
+  user-select: none;
+  color: var(--color-gray-800, #1f2937);
+}
+
+/* Bloqueio de seleção de texto em qualquer elemento */
+.no-select {
+  user-select: none;
+}
+
+/* Campos editáveis mantêm comportamento normal */
+input:not([readonly]),
+textarea:not([readonly]),
+button,
+a {
+  cursor: text;
+  user-select: auto;
+  caret-color: auto;
+}
+
+/* Foco visual apenas em campos editáveis */
+input:not([readonly]):focus,
+textarea:not([readonly]):focus {
+  outline: none;
+  ring: 2px solid var(--color-neonBlue, #00e5ff);
+}

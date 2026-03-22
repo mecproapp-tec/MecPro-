@@ -1,0 +1,73 @@
+import api from './api';
+
+export interface InvoiceItem {
+  description: string;
+  quantity: number;
+  price: number;
+  total: number;
+  issPercent?: number; // opcional
+}
+
+export interface Invoice {
+  id: number;
+  tenantId: string;
+  clientId: number;
+  estimateId?: number;
+  total: number;
+  number: string;
+  status: "PENDING" | "PAID" | "CANCELED";
+  createdAt: string;
+  items: InvoiceItem[];
+  client?: {
+    name: string;
+    plate?: string;
+  };
+}
+
+export interface CreateInvoiceData {
+  clientId: number;
+  estimateId?: number;
+  items: InvoiceItem[];
+  status?: "PENDING" | "PAID" | "CANCELED";
+}
+
+export const getInvoices = async (): Promise<Invoice[]> => {
+  try {
+    const response = await api.get("/invoices");
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      console.warn("Rota /invoices não implementada. Retornando array vazio.");
+      return [];
+    }
+    throw error;
+  }
+};
+
+export const getInvoiceById = async (id: number): Promise<Invoice> => {
+  const response = await api.get(`/invoices/${id}`);
+  return response.data;
+};
+
+export const createInvoice = async (data: CreateInvoiceData): Promise<Invoice> => {
+  const response = await api.post("/invoices", data);
+  return response.data;
+};
+
+export const updateInvoice = async (id: number, data: CreateInvoiceData): Promise<Invoice> => {
+  const response = await api.put(`/invoices/${id}`, data);
+  return response.data;
+};
+
+export const deleteInvoice = async (id: number): Promise<void> => {
+  await api.delete(`/invoices/${id}`);
+};
+
+// Função para calcular total com ISS (usada no PDF e onde mais precisar)
+export function calculateTotalWithIss(items: InvoiceItem[]): number {
+  return items.reduce((acc, item) => {
+    const itemTotal = item.price * item.quantity;
+    const iss = item.issPercent ? itemTotal * (item.issPercent / 100) : 0;
+    return acc + itemTotal + iss;
+  }, 0);
+}
