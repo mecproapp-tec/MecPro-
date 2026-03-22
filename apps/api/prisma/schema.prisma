@@ -1,0 +1,292 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// ///////////////// CONTACT MESSAGES (FAQ) ////////////////////
+model ContactMessage {
+  id        Int      @id @default(autoincrement())
+  tenantId  String?
+  userEmail String?
+  userName  String?
+  message   String
+  status    String   @default("pending")
+  reply     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+}
+
+/// ///////////////// TENANT (Oficina) ////////////////////
+model Tenant {
+  id                     String                  @id @default(uuid())
+  name                   String
+  documentType           String
+  documentNumber         String                  @unique
+  cep                    String
+  address                String
+  email                  String
+  phone                  String
+  logoUrl                String?
+  status                 TenantStatus            @default(ACTIVE)
+  trialEndsAt            DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  appointments           Appointment[]
+  clients                Client[]
+  contactMessages        ContactMessage[]
+  estimates              Estimate[]
+  invoices               Invoice[]
+  notifications          Notification[]
+  payments               Payment[]
+  scheduledNotifications ScheduledNotification[]
+  subscriptions          Subscription[]
+  users                  User[]
+
+  @@index([status])
+}
+
+/// ///////////////// USUÁRIOS (proprietários e admins da oficina) ////////////////////
+model User {
+  name          String
+  email         String         @unique
+  password      String
+  role          UserRole       @default(OWNER)
+  tenantId      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  id            Int            @id @default(autoincrement())
+  clients       Client[]
+  refreshTokens RefreshToken[]
+  tenant        Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// ///////////////// SUPER ADMIN (opcional) ////////////////////
+model SuperAdmin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+}
+
+/// ///////////////// SUBSCRIPTIONS ////////////////////
+model Subscription {
+  id                    String             @id @default(uuid())
+  tenantId              String
+  planName              String
+  price                 Float
+  status                SubscriptionStatus
+  gateway               String
+  gatewaySubscriptionId String?
+  startDate             DateTime
+  endDate               DateTime?
+  createdAt             DateTime           @default(now())
+  payments              Payment[]
+  tenant                Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// ///////////////// PAYMENTS ////////////////////
+model Payment {
+  id               String        @id @default(uuid())
+  tenantId         String
+  subscriptionId   String?
+  amount           Float
+  status           PaymentStatus
+  gatewayPaymentId String?
+  paidAt           DateTime?
+  createdAt        DateTime      @default(now())
+  subscription     Subscription? @relation(fields: [subscriptionId], references: [id])
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+/// ///////////////// CLIENTES ////////////////////
+model Client {
+  id           Int           @id @default(autoincrement())
+  tenantId     String
+  userId       Int?
+  name         String
+  phone        String
+  vehicle      String
+  plate        String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  address      String?
+  document     String?
+  appointments Appointment[]
+  budgets      Budget[]
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id])
+  estimates    Estimate[]
+  invoices     Invoice[]
+}
+
+/// ///////////////// REFRESH TOKENS ////////////////////
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// ///////////////// AGENDAMENTOS ////////////////////
+model Appointment {
+  tenantId      String
+  createdAt     DateTime       @default(now())
+  clientId      Int
+  comment       String?
+  date          DateTime
+  id            Int            @id @default(autoincrement())
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+}
+
+/// ///////////////// ORÇAMENTOS ////////////////////
+model Estimate {
+  tenantId          String
+  total             Float
+  status            EstimateStatus @default(DRAFT)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  clientId          Int
+  id                Int            @id @default(autoincrement())
+  date              DateTime
+  shareToken        String?        @unique
+  shareTokenExpires DateTime?
+  client            Client         @relation(fields: [clientId], references: [id])
+  tenant            Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items             EstimateItem[]
+  invoice           Invoice?
+}
+
+model EstimateItem {
+  description String
+  quantity    Int
+  price       Float
+  total       Float
+  id          Int      @id @default(autoincrement())
+  estimateId  Int
+  issPercent  Float?
+  estimate    Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@unique([estimateId, id])
+}
+
+/// ///////////////// ORÇAMENTOS (versão antiga, manter compatibilidade) ////////////////////
+model Budget {
+  id        Int      @id @default(autoincrement())
+  clientId  Int
+  tenantId  String
+  items     String
+  total     Float
+  status    String
+  createdAt DateTime @default(now())
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+/// ///////////////// FATURAS ////////////////////
+model Invoice {
+  tenantId          String
+  total             Float
+  status            InvoiceStatus @default(PENDING)
+  createdAt         DateTime      @default(now())
+  clientId          Int
+  number            String        @unique
+  id                Int           @id @default(autoincrement())
+  estimateId        Int?          @unique
+  shareToken        String?       @unique
+  shareTokenExpires DateTime?
+  client            Client        @relation(fields: [clientId], references: [id])
+  estimate          Estimate?     @relation(fields: [estimateId], references: [id])
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items             InvoiceItem[]
+}
+
+model InvoiceItem {
+  description String
+  quantity    Int
+  price       Float
+  total       Float
+  id          Int     @id @default(autoincrement())
+  invoiceId   Int
+  issPercent  Float?
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, id])
+}
+
+/// ///////////////// NOTIFICAÇÕES ////////////////////
+model Notification {
+  tenantId      String?
+  title         String
+  message       String
+  isGlobal      Boolean      @default(false)
+  read          Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  id            Int          @id @default(autoincrement())
+  appointmentId Int?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  tenant        Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// ///////////////// NOTIFICAÇÕES AGENDADAS (para o admin) ////////////////////
+model ScheduledNotification {
+  id        String   @id @default(uuid())
+  tenantId  String?
+  title     String
+  message   String
+  target    String
+  schedule  DateTime
+  sent      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// ///////////////// ENUMS ////////////////////
+enum TenantStatus {
+  ACTIVE
+  BLOCKED
+  CANCELED
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum EstimateStatus {
+  DRAFT
+  SENT
+  APPROVED
+  CONVERTED
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  CANCELED
+}
