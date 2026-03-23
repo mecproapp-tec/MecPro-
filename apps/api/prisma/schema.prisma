@@ -21,6 +21,18 @@ model ContactMessage {
   tenant    Tenant?  @relation(fields: [tenantId], references: [id])
 }
 
+
+
+/// ///////////////// ASSINATURAS PENDENTES (antes do cadastro) ////////////////////
+model PendingSubscription {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  subscriptionId String   @unique
+  planId         String
+  trialEndsAt    DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
 /// ///////////////// TENANT (Oficina) ////////////////////
 model Tenant {
   id                     String                  @id @default(uuid())
@@ -36,6 +48,10 @@ model Tenant {
   trialEndsAt            DateTime?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
+  // ⬇️ NOVOS CAMPOS
+  subscriptionId         String?                 @unique
+  paymentStatus          String?                 @default("pending")
+  // ⬆️ NOVOS CAMPOS
   appointments           Appointment[]
   clients                Client[]
   contactMessages        ContactMessage[]
