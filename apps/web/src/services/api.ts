@@ -70,6 +70,7 @@ export const registerTenant = async (data: {
   ownerName: string;
   password: string;
   paymentCompleted: boolean;
+  pendingId?: string; // Adicionado para suporte ao fluxo de pagamento
 }) => {
   const response = await api.post("/auth/register-tenant", data);
   return response.data;
