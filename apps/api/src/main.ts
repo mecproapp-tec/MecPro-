@@ -1,9 +1,16 @@
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';   
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  console.log('🔥 SUBIU A API CORRETA 🔥');
+  app.enableCors({
+    origin: 'https://mecpro.tec.br', 
+    credentials: true,
+  });
 
   app.setGlobalPrefix('api');
-
   await app.listen(process.env.PORT || 3000);
+  console.log('🔥 SUBIU A API CORRETA 🔥');
 }
+bootstrap();
