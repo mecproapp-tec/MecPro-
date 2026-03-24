@@ -10,13 +10,11 @@ export class PaymentsController {
     private configService: ConfigService,
   ) {}
 
-  // Endpoint para criar uma assinatura (chamado pelo frontend)
   @Post('subscription')
   async createSubscription(@Body() body: { email: string; planId: string }) {
     return this.paymentService.createSubscription(body.email, body.planId);
   }
 
-  // Endpoint administrativo para criar o plano com trial de 30 dias (executar apenas uma vez)
   @Post('create-plan')
   async createPlan() {
     const accessToken = this.configService.get('MP_ACCESS_TOKEN');
@@ -26,7 +24,7 @@ export class PaymentsController {
       auto_recurring: {
         frequency: 1,
         frequency_type: "months",
-        transaction_amount: 149.90,
+        transaction_amount: 1.00,   // 🟢 ALTERADO PARA R$ 1,00 (teste)
         currency_id: "BRL",
         free_trial: {
           frequency: 30,
@@ -39,7 +37,7 @@ export class PaymentsController {
           { id: "debit_card" }
         ]
       },
-      back_url: "https://app.mecpro.tec.br/cadastro?payment=success"
+      back_url: "https://www.mecpro.tec.br/cadastro?payment=success"
     };
 
     try {

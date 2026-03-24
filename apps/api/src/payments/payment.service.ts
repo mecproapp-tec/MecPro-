@@ -6,14 +6,13 @@ import axios from 'axios';
 export class PaymentService {
   constructor(private configService: ConfigService) {}
 
-  // Cria uma pré-aprovação (assinatura) usando o ID do plano
   async createSubscription(email: string, planId: string) {
     const accessToken = this.configService.get('MP_ACCESS_TOKEN');
 
     const preapproval = {
       preapproval_plan_id: planId,
       payer_email: email,
-      back_url: "https://app.mecpro.tec.br/cadastro?payment=success",
+      back_url: "https://www.mecpro.tec.br/cadastro?payment=success",
       status: "pending"
     };
 
@@ -30,7 +29,6 @@ export class PaymentService {
     }
   }
 
-  // Consulta uma assinatura pelo ID
   async getSubscription(subscriptionId: string) {
     const accessToken = this.configService.get('MP_ACCESS_TOKEN');
     const response = await axios.get(
@@ -40,7 +38,6 @@ export class PaymentService {
     return response.data;
   }
 
-  // Consulta um pagamento pelo ID
   async getPayment(paymentId: string) {
     const accessToken = this.configService.get('MP_ACCESS_TOKEN');
     const response = await axios.get(

@@ -1,5 +1,4 @@
-// C:\Users\admco\OneDrive\Escritorio\MecPro\apps\api\src\app.module.ts
-
+// apps/api/src/app.module.ts
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
@@ -18,10 +17,11 @@ import { AdminModule } from "./modules/admin/admin.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { AppointmentsModule } from "./modules/appointments/appointments.module";
 import { ContactModule } from "./modules/contact/contact.module";
-
-// ✅ Importa módulos adicionais
 import { WhatsappModule } from "./modules/whatsapp/whatsapp.module";
 import { PublicModule } from "./modules/public/public.module";
+
+import { AppController } from "./app.controller"; // 👈 importe o controlador
+import { AppService } from "./app.service";      // 👈 opcional, mas se usado
 
 @Module({
   imports: [
@@ -40,10 +40,10 @@ import { PublicModule } from "./modules/public/public.module";
     NotificationsModule,
     AppointmentsModule,
     ContactModule,
-
-    // ✅ Módulos adicionais
     WhatsappModule,
     PublicModule,
   ],
+  controllers: [AppController], // 👈 registre o controlador
+  providers: [AppService],      // 👈 se necessário (opcional)
 })
 export class AppModule {}
