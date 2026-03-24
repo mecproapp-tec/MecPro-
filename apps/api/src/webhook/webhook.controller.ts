@@ -1,6 +1,7 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, Headers, BadRequestException } from '@nestjs/common';
 import { PaymentService } from '../payments/payment.service';
 import { PrismaService } from '../shared/prisma/prisma.service';
+import * as crypto from 'crypto';
 
 @Controller('webhook')
 export class WebhookController {
@@ -10,7 +11,23 @@ export class WebhookController {
   ) {}
 
   @Post('mercadopago')
-  async mercadopagoWebhook(@Body() body: any) {
+  async mercadopagoWebhook(
+    @Body() body: any,
+    @Headers('x-signature') signature: string,
+  ) {
+    // Validação da assinatura (opcional, mas recomendada)
+    const secret = process.env.MP_WEBHOOK_SECRET;
+    if (secret && signature) {
+      const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(JSON.stringify(body))
+        .digest('hex');
+      if (signature !== expectedSignature) {
+        console.warn('Assinatura inválida, ignorando webhook');
+        throw new BadRequestException('Assinatura inválida');
+      }
+    }
+
     console.log('Webhook recebido:', JSON.stringify(body, null, 2));
 
     const { type, data } = body;
@@ -20,6 +37,7 @@ export class WebhookController {
       if (subscription.status === 'authorized') {
         const externalRef = subscription.external_reference;
         if (externalRef) {
+          // Atualiza a pendência com o subscriptionId real
           await this.prisma.pendingSubscription.update({
             where: { id: externalRef },
             data: {
@@ -29,6 +47,7 @@ export class WebhookController {
           });
           console.log(`✅ Pendência ${externalRef} confirmada.`);
         } else {
+          // Fallback: criar pendência pelo email
           await this.prisma.pendingSubscription.upsert({
             where: { email: subscription.payer_email },
             update: { subscriptionId: subscription.id },
@@ -47,6 +66,7 @@ export class WebhookController {
       const payment = await this.paymentService.getPayment(data.id);
       if (payment.status === 'approved' && payment.payer?.email) {
         console.log(`✅ Pagamento aprovado para ${payment.payer.email}`);
+        // Aqui você pode querer tratar pagamentos avulsos, se necessário
       }
     }
 
