@@ -1,7 +1,13 @@
-@Controller('teste')
+// apps/api/src/app.controller.ts
+import { Controller, Get } from '@nestjs/common';
+
+@Controller()
 export class AppController {
   @Get()
-  getHello() {
-    return { status: 'OK FUNCIONANDO 🚀' };
+  root() {
+    return {
+      message: 'API MecPro Online ✅',
+      timestamp: new Date().toISOString(),
+    };
   }
 }
