@@ -8,12 +8,12 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class EstimatesService {
-constructor(
-  private prisma: PrismaService,
-  private estimatesPdfService: EstimatesPdfService,
-  private whatsappService: WhatsappService,
-  private configService: ConfigService,
-) {}
+  constructor(
+    private prisma: PrismaService,
+    private estimatesPdfService: EstimatesPdfService,
+    private whatsappService: WhatsappService,
+    private configService: ConfigService,
+  ) {}
 
   async create(tenantId: string, data: { clientId: number; date: string; items: any[] }) {
     const client = await this.prisma.client.findFirst({
@@ -128,7 +128,7 @@ constructor(
     const estimate = await this.findOne(id, tenantId);
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 dias de validade
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
     await this.prisma.estimate.update({
       where: { id },
@@ -163,44 +163,47 @@ constructor(
     return this.estimatesPdfService.generateEstimatePdf(estimate, tenant);
   }
 
-async sendViaWhatsApp(
-  id: number,
-  tenantId: string,
-): Promise<{ whatsappLink: string; message: string; pdfUrl: string }> {
-  const estimate = await this.findOne(id, tenantId);
-  const client = estimate.client;
+  async sendViaWhatsApp(
+    id: number,
+    tenantId: string,
+  ): Promise<{ whatsappLink: string; message: string; pdfUrl: string }> {
+    const estimate = await this.findOne(id, tenantId);
+    const client = estimate.client;
 
-  if (!client.phone) {
-    throw new BadRequestException('Cliente não possui telefone cadastrado');
-  }
+    if (!client.phone) {
+      throw new BadRequestException('Cliente não possui telefone cadastrado');
+    }
 
-  const token = await this.generateShareToken(id, tenantId);
+    const token = await this.generateShareToken(id, tenantId);
 
-  const baseUrl =
-    this.configService.get<string>('APP_URL')?.replace(/\/$/, '') ||
-    'http://localhost:3000';
+    const baseUrl =
+      this.configService.get<string>('APP_URL')?.replace(/\/$/, '') ||
+      'http://localhost:3000';
 
-  const pdfUrl = `${baseUrl}/api/public/estimates/share/${token}`;
+    const pdfUrl = `${baseUrl}/api/public/estimates/share/${token}`;
 
-  const message = `Olá ${client.name}, seu orçamento #${estimate.id} está pronto!
+    // 🔥 Mensagem com link isolado em linha própria
+    const message = `Olá ${client.name}!
 
-📄 Link do PDF:
+Seu orçamento está pronto ✅
+
+🔗 Acesse aqui:
 ${pdfUrl}
 
 👤 Cliente: ${client.name}
-📅 Data: ${new Date(estimate.date).toLocaleDateString('pt-BR')}
+🚗 Veículo: ${client.vehicle || 'Não informado'}
 💰 Total: R$ ${estimate.total.toFixed(2)}
-📌 Status: ${estimate.status}`;
+📌 Status: ${estimate.status === 'DRAFT' ? 'Pendente' : estimate.status === 'APPROVED' ? 'Aceito' : 'Convertido'}`;
 
-  const whatsappLink = this.whatsappService.generateWhatsAppLink(
-    client.phone,
-    message,
-  );
+    const whatsappLink = this.whatsappService.generateWhatsAppLink(
+      client.phone,
+      message,
+    );
 
-  return {
-    whatsappLink,
-    message,
-    pdfUrl,
-  };
-}
+    return {
+      whatsappLink,
+      message,
+      pdfUrl,
+    };
+  }
 }
