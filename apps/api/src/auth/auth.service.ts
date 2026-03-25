@@ -3,6 +3,7 @@ import { PrismaService } from '../shared/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { PaymentService } from '../payments/payment.service';
+import { Request } from 'express';
 
 @Injectable()
 export class AuthService {
@@ -156,7 +157,7 @@ export class AuthService {
     return { message: 'Administrador cadastrado com sucesso' };
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, req: Request) {
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { tenant: true },
@@ -170,7 +171,28 @@ export class AuthService {
       throw new UnauthorizedException('Sua conta está bloqueada. Entre em contato com o administrador.');
     }
 
-    const payload = { sub: user.id, tenantId: user.tenantId, role: user.role };
+    const activeSession = await this.prisma.userSession.findFirst({
+      where: { userId: user.id },
+    });
+    if (activeSession) {
+      throw new UnauthorizedException('Usuário já está logado em outro dispositivo');
+    }
+
+    const sessionToken = this.generateSessionToken();
+    const ip = req.ip || req.socket.remoteAddress || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    await this.prisma.userSession.create({
+      data: {
+        userId: user.id,
+        sessionToken,
+        ipAddress: ip,
+        userAgent,
+        lastActivity: new Date(),
+      },
+    });
+
+    const payload = { sub: user.id, tenantId: user.tenantId, role: user.role, sessionToken };
     const accessToken = this.jwtService.sign(payload);
     const refreshToken = this.generateRefreshToken();
 
@@ -194,8 +216,19 @@ export class AuthService {
     };
   }
 
+  async logout(userId: number, sessionToken: string) {
+    await this.prisma.userSession.deleteMany({
+      where: { userId, sessionToken },
+    });
+    return { message: 'Logout realizado com sucesso' };
+  }
+
   generateRefreshToken() {
     return require('crypto').randomBytes(64).toString('hex');
+  }
+
+  generateSessionToken() {
+    return require('crypto').randomBytes(32).toString('hex');
   }
 
   async refreshToken(token: string) {
@@ -206,7 +239,12 @@ export class AuthService {
     if (!stored) throw new UnauthorizedException('Refresh token inválido');
 
     const user = stored.user;
-    const payload = { sub: user.id, tenantId: user.tenantId };
+    const session = await this.prisma.userSession.findFirst({
+      where: { userId: user.id },
+    });
+    if (!session) throw new UnauthorizedException('Sessão não encontrada');
+
+    const payload = { sub: user.id, tenantId: user.tenantId, sessionToken: session.sessionToken };
     const accessToken = this.jwtService.sign(payload);
     return { accessToken };
   }
