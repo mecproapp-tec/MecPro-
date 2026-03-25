@@ -25,11 +25,11 @@ export class InvoicesPdfService {
     const client: any = invoice.client;
 
     const vehicleDetails =
-      client.vehicleBrand && client.vehicleModel
+      client?.vehicleBrand && client?.vehicleModel
         ? `${client.vehicleBrand} ${client.vehicleModel}${client.vehicleYear ? ` ${client.vehicleYear}` : ''}${client.vehicleColor ? ` - ${client.vehicleColor}` : ''}`.trim()
-        : client.vehicle || 'Não informado';
+        : client?.vehicle || 'Não informado';
 
-    const plate = client.plate || 'Não informado';
+    const plate = client?.plate || 'Não informado';
 
     let subtotal = 0;
     let issTotal = 0;
