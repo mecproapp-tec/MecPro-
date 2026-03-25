@@ -22,19 +22,25 @@ export class InvoicesPdfService {
       throw new Error('Fatura não encontrada');
     }
 
-    const client = invoice.client;
-    const vehicleDetails = client.vehicleBrand && client.vehicleModel
-      ? `${client.vehicleBrand} ${client.vehicleModel} ${client.vehicleYear || ''} - ${client.vehicleColor || ''}`.trim()
-      : client.vehicle || 'Não informado';
+    const client: any = invoice.client;
+
+    const vehicleDetails =
+      client.vehicleBrand && client.vehicleModel
+        ? `${client.vehicleBrand} ${client.vehicleModel}${client.vehicleYear ? ` ${client.vehicleYear}` : ''}${client.vehicleColor ? ` - ${client.vehicleColor}` : ''}`.trim()
+        : client.vehicle || 'Não informado';
+
     const plate = client.plate || 'Não informado';
 
     let subtotal = 0;
     let issTotal = 0;
-    const itemsWithTotal = invoice.items.map(item => {
+
+    const itemsWithTotal = invoice.items.map((item) => {
       const itemTotal = item.price * item.quantity;
       const iss = item.issPercent ? itemTotal * (item.issPercent / 100) : 0;
+
       subtotal += itemTotal;
       issTotal += iss;
+
       return {
         description: item.description,
         quantity: item.quantity,
@@ -75,12 +81,19 @@ export class InvoicesPdfService {
     };
 
     const html = template(data);
+
     const browser = await puppeteer.launch({
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
+
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdfUint8 = await page.pdf({ format: 'A4', printBackground: true });
+
+    const pdfUint8 = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+    });
+
     await browser.close();
 
     return Buffer.from(pdfUint8);
@@ -92,6 +105,7 @@ export class InvoicesPdfService {
       PENDING: 'Pendente',
       CANCELED: 'Cancelada',
     };
+
     return map[status] || 'Desconhecido';
   }
 }
