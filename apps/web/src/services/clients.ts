@@ -6,6 +6,10 @@ export interface Client {
   phone: string;
   vehicle: string;
   plate: string;
+  vehicleBrand?: string;
+  vehicleModel?: string;
+  vehicleYear?: number;
+  vehicleColor?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -15,6 +19,10 @@ export interface CreateClientData {
   phone: string;
   vehicle: string;
   plate: string;
+  vehicleBrand?: string;
+  vehicleModel?: string;
+  vehicleYear?: number;
+  vehicleColor?: string;
 }
 
 export const getClients = async (): Promise<Client[]> => {
@@ -39,4 +47,13 @@ export const updateClient = async (id: number, data: CreateClientData): Promise<
 
 export const deleteClient = async (id: number): Promise<void> => {
   await api.delete(`/clients/${id}`);
+};
+
+export const getVehicleDisplay = (client: Client): string => {
+  if (client.vehicleBrand && client.vehicleModel) {
+    const year = client.vehicleYear ? ` ${client.vehicleYear}` : "";
+    const color = client.vehicleColor ? ` - ${client.vehicleColor}` : "";
+    return `${client.vehicleBrand} ${client.vehicleModel}${year}${color}`.trim();
+  }
+  return client.vehicle || "Não informado";
 };

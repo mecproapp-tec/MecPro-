@@ -24,20 +24,20 @@ export class EstimatesPdfService {
     const issueDate = new Date(estimate.date).toLocaleDateString('pt-BR');
     const validUntil = new Date(new Date(estimate.date).getTime() + 10 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR');
 
-    // ✅ Status em português conforme frontend
     const statusMap: Record<string, string> = {
       DRAFT: 'Pendente',
       APPROVED: 'Aceito',
       CONVERTED: 'Convertido',
     };
 
-    const clientDoc = estimate.client['document'] || 'Não informado';
-    const clientAddress = estimate.client['address'] || 'Não informado';
-    const clientVehicle = estimate.client['vehicle'] || 'Não informado';
-    const clientPlate = estimate.client['plate'] || 'Não informado';
+    const client = estimate.client;
+    const vehicleDetails = client.vehicleBrand && client.vehicleModel
+      ? `${client.vehicleBrand} ${client.vehicleModel} ${client.vehicleYear || ''} - ${client.vehicleColor || ''}`.trim()
+      : client.vehicle || 'Não informado';
+    const plate = client.plate || 'Não informado';
 
     const companyName = tenant?.name || 'Oficina Mecânica';
-    const companyDocument = tenant?.['documentNumber'] || tenant?.['document'] || '00.000.000/0001-00';
+    const companyDocument = tenant?.documentNumber || tenant?.document || '00.000.000/0001-00';
     const companyPhone = tenant?.phone || '(11) 1234-5678';
     const companyEmail = tenant?.email || 'contato@oficina.com';
     const logoUrl = tenant?.logoUrl || 'https://via.placeholder.com/150x80?text=Logo';
@@ -50,12 +50,12 @@ export class EstimatesPdfService {
       logoUrl,
       estimateNumber: estimate.id,
       client: {
-        name: estimate.client.name,
-        document: clientDoc,
-        address: clientAddress,
-        phone: estimate.client.phone,
-        vehicle: clientVehicle,
-        plate: clientPlate,
+        name: client.name,
+        document: client.document || 'Não informado',
+        address: client.address || 'Não informado',
+        phone: client.phone,
+        vehicle: vehicleDetails,
+        plate: plate,
       },
       issueDate,
       validUntil,

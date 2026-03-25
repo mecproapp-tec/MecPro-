@@ -25,12 +25,12 @@ model ContactMessage {
 model PendingSubscription {
   id             String   @id @default(uuid())
   email          String   @unique
-  subscriptionId String?  // pode ser nulo até o webhook confirmar
+  subscriptionId String?
   planId         String
   trialEndsAt    DateTime
-  status         String   @default("pending") // pending, paid, expired
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  status         String   @default("pending")
 
   @@index([email, status])
   @@index([status])
@@ -51,8 +51,8 @@ model Tenant {
   trialEndsAt            DateTime?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
-  subscriptionId         String?                 @unique
   paymentStatus          String?                 @default("pending")
+  subscriptionId         String?                 @unique
   appointments           Appointment[]
   clients                Client[]
   contactMessages        ContactMessage[]

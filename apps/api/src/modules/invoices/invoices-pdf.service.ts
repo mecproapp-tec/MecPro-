@@ -1,4 +1,3 @@
-// apps/api/src/modules/invoices/invoices-pdf.service.ts
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import * as fs from 'fs';
@@ -11,7 +10,6 @@ export class InvoicesPdfService {
   constructor(private prisma: PrismaService) {}
 
   async getPdfByShareToken(token: string): Promise<Buffer> {
-    // Buscar a fatura pelo token de compartilhamento
     const invoice = await this.prisma.invoice.findFirst({
       where: { shareToken: token },
       include: {
@@ -24,7 +22,12 @@ export class InvoicesPdfService {
       throw new Error('Fatura não encontrada');
     }
 
-    // Calcular subtotal e ISS com base nos itens
+    const client = invoice.client;
+    const vehicleDetails = client.vehicleBrand && client.vehicleModel
+      ? `${client.vehicleBrand} ${client.vehicleModel} ${client.vehicleYear || ''} - ${client.vehicleColor || ''}`.trim()
+      : client.vehicle || 'Não informado';
+    const plate = client.plate || 'Não informado';
+
     let subtotal = 0;
     let issTotal = 0;
     const itemsWithTotal = invoice.items.map(item => {
@@ -39,31 +42,26 @@ export class InvoicesPdfService {
         total: (itemTotal + iss).toFixed(2),
       };
     });
+
     const total = subtotal + issTotal;
 
-    // Carregar o template
     const templatePath = path.join(__dirname, 'invoice-pdf.hbs');
     const templateContent = fs.readFileSync(templatePath, 'utf8');
     const template = Handlebars.compile(templateContent);
 
-    // Dados do cliente incluindo veículo e placa
-    const clientVehicle = invoice.client['vehicle'] || 'Não informado';
-    const clientPlate = invoice.client['plate'] || 'Não informado';
-
-    // Dados para o template
     const data = {
       invoiceNumber: invoice.number,
       client: {
-        name: invoice.client.name,
-        document: invoice.client.document || 'Não informado',
-        address: invoice.client.address || '',
-        phone: invoice.client.phone,
-        vehicle: clientVehicle,
-        plate: clientPlate,
+        name: client.name,
+        document: client.document || 'Não informado',
+        address: client.address || '',
+        phone: client.phone,
+        vehicle: vehicleDetails,
+        plate: plate,
       },
       issueDate: new Date(invoice.createdAt).toLocaleDateString('pt-BR'),
       dueDate: '',
-      status: invoice.status === 'PAID' ? 'Paga' : invoice.status === 'PENDING' ? 'Pendente' : 'Cancelada',
+      status: this.getStatusText(invoice.status),
       items: itemsWithTotal,
       subtotal: subtotal.toFixed(2),
       issRate: 0,
@@ -77,8 +75,6 @@ export class InvoicesPdfService {
     };
 
     const html = template(data);
-
-    // Gerar PDF com Puppeteer
     const browser = await puppeteer.launch({
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
@@ -88,5 +84,14 @@ export class InvoicesPdfService {
     await browser.close();
 
     return Buffer.from(pdfUint8);
+  }
+
+  private getStatusText(status: string): string {
+    const map = {
+      PAID: 'Paga',
+      PENDING: 'Pendente',
+      CANCELED: 'Cancelada',
+    };
+    return map[status] || 'Desconhecido';
   }
 }

@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { FiTrash2, FiPlus, FiArrowLeft, FiFileText, FiMessageCircle, FiEye } from "react-icons/fi";
 import { getInvoices, deleteInvoice, updateInvoice, calculateTotalWithIss } from "../../../services/invoices";
 import type { Invoice } from "../../../services/invoices";
-import { getClients } from "../../../services/clients";
+import { getClients, getVehicleDisplay } from "../../../services/clients";
 import type { Client } from "../../../services/clients";
-import api from "../../../services/api"; // ✅ importado
+import api from "../../../services/api";
 
 type FilterType = "todos" | "PENDING" | "PAID" | "CANCELED";
 
@@ -75,16 +75,15 @@ export default function Faturas() {
     }
   };
 
-  // ✅ Função auxiliar para obter dados do cliente (igual ao Orcamentos)
   const getClienteInfo = (clientId: number) => {
     const cliente = clientes.find((c) => c.id === clientId);
     return {
       nome: cliente?.name || "Cliente não encontrado",
       placa: cliente?.plate || "",
+      veiculo: cliente ? getVehicleDisplay(cliente) : "Não informado",
     };
   };
 
-  // ✅ NOVA FUNÇÃO handleWhatsApp – igual à lógica do Orcamentos
   const handleWhatsApp = async (fatura: Invoice) => {
     const cliente = clientes.find((c) => c.id === fatura.clientId);
 
@@ -99,7 +98,6 @@ export default function Faturas() {
     }
 
     try {
-      // ✅ Usa api.post (com token e baseURL corretos)
       const response = await api.post(`/invoices/${fatura.id}/share`);
       const { url: link } = response.data;
 
@@ -114,7 +112,7 @@ Sua fatura nº ${fatura.number} está disponível ✅
 ${link}
 
 👤 Cliente: ${clienteInfo.nome}
-🚗 Placa: ${clienteInfo.placa}
+🚗 Veículo: ${clienteInfo.veiculo}
 💰 Total: R$ ${fatura.total.toFixed(2)}
 📌 Status: ${
           fatura.status === "PAID"
@@ -132,10 +130,11 @@ ${link}
     }
   };
 
-  // Gera PDF da fatura
   const handlePDF = (fatura: Invoice) => {
     const oficina = JSON.parse(localStorage.getItem("oficina") || "{}");
     const totalComIss = calculateTotalWithIss(fatura.items);
+    const clienteInfo = getClienteInfo(fatura.clientId);
+
     const win = window.open("", "_blank");
     if (win) {
       win.document.write(`
@@ -170,9 +169,17 @@ ${link}
             </div>
             <h1>Fatura</h1>
             <p><strong>Número:</strong> ${fatura.number}</p>
-            <p><strong>Cliente:</strong> ${getClienteInfo(fatura.clientId).nome}</p>
+            <p><strong>Cliente:</strong> ${clienteInfo.nome}</p>
+            <p><strong>Veículo:</strong> ${clienteInfo.veiculo}</p>
+            <p><strong>Placa:</strong> ${clienteInfo.placa}</p>
             <p><strong>Data:</strong> ${new Date(fatura.createdAt).toLocaleDateString("pt-BR")}</p>
-            <p><strong>Status:</strong> ${fatura.status}</p>
+            <p><strong>Status:</strong> ${
+              fatura.status === "PAID"
+                ? "Paga"
+                : fatura.status === "PENDING"
+                ? "Pendente"
+                : "Cancelada"
+            }</p>
             <div class="details">
               <h3>Itens</h3>
                <table>
@@ -389,6 +396,8 @@ ${link}
                 <tr style={{ background: "#1e1e1e", borderBottom: "2px solid #00e5ff30" }}>
                   <th style={{ padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" }}>Nº</th>
                   <th style={{ padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" }}>Cliente</th>
+                  <th style={{ padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" }}>Veículo</th>
+                  <th style={{ padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" }}>Placa</th>
                   <th style={{ padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" }}>Data</th>
                   <th style={{ padding: "20px 16px", textAlign: "right", fontWeight: "600", color: "#a0a0a0" }}>Total</th>
                   <th style={{ padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" }}>Status</th>
@@ -396,137 +405,142 @@ ${link}
                 </tr>
               </thead>
               <tbody>
-                {faturasFiltradas.map((f, index) => (
-                  <tr
-                    key={f.id}
-                    style={{
-                      borderBottom: "1px solid #2a2a2a",
-                      transition: "background 0.2s",
-                      background: index % 2 === 0 ? "#0f0f0f" : "#1a1a1a",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#2a2a2a")}
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = index % 2 === 0 ? "#0f0f0f" : "#1a1a1a")
-                    }
-                  >
-                    <td style={{ padding: "18px 16px", fontWeight: "500", color: "#fff" }}>{f.number}</td>
-                    <td style={{ padding: "18px 16px", color: "#b0b0b0" }}>{getClienteInfo(f.clientId).nome}</td>
-                    <td style={{ padding: "18px 16px", color: "#b0b0b0" }}>
-                      {new Date(f.createdAt).toLocaleDateString("pt-BR")}
-                    </td>
-                    <td style={{ padding: "18px 16px", textAlign: "right", fontWeight: "600", color: "#00e5ff" }}>
-                      R$ {f.total.toFixed(2)}
-                    </td>
-                    <td style={{ padding: "18px 16px" }}>
-                      <select
-                        value={f.status}
-                        onChange={(e) => handleStatusChange(f, e.target.value)}
-                        style={{
-                          background: "#1a1a1a",
-                          color: "#00e5ff",
-                          border: "1px solid #00e5ff40",
-                          padding: "8px 12px",
-                          borderRadius: "100px",
-                          cursor: "pointer",
-                          fontWeight: "500",
-                          fontSize: "0.85rem",
-                          outline: "none",
-                        }}
-                      >
-                        <option value="PENDING">Pendente</option>
-                        <option value="PAID">Paga</option>
-                        <option value="CANCELED">Cancelada</option>
-                      </select>
-                    </td>
-                    <td style={{ padding: "18px 16px", textAlign: "center" }}>
-                      <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-                        <button
-                          onClick={() => navigate(`/clientes/ver/${f.clientId}`)}
+                {faturasFiltradas.map((f, index) => {
+                  const clienteInfo = getClienteInfo(f.clientId);
+                  return (
+                    <tr
+                      key={f.id}
+                      style={{
+                        borderBottom: "1px solid #2a2a2a",
+                        transition: "background 0.2s",
+                        background: index % 2 === 0 ? "#0f0f0f" : "#1a1a1a",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#2a2a2a")}
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background = index % 2 === 0 ? "#0f0f0f" : "#1a1a1a")
+                      }
+                    >
+                      <td style={{ padding: "18px 16px", fontWeight: "500", color: "#fff" }}>{f.number}</td>
+                      <td style={{ padding: "18px 16px", color: "#b0b0b0" }}>{clienteInfo.nome}</td>
+                      <td style={{ padding: "18px 16px", color: "#b0b0b0" }}>{clienteInfo.veiculo}</td>
+                      <td style={{ padding: "18px 16px", color: "#b0b0b0" }}>{clienteInfo.placa}</td>
+                      <td style={{ padding: "18px 16px", color: "#b0b0b0" }}>
+                        {new Date(f.createdAt).toLocaleDateString("pt-BR")}
+                      </td>
+                      <td style={{ padding: "18px 16px", textAlign: "right", fontWeight: "600", color: "#00e5ff" }}>
+                        R$ {f.total.toFixed(2)}
+                      </td>
+                      <td style={{ padding: "18px 16px" }}>
+                        <select
+                          value={f.status}
+                          onChange={(e) => handleStatusChange(f, e.target.value)}
                           style={{
-                            ...botaoStyle,
+                            background: "#1a1a1a",
                             color: "#00e5ff",
-                            borderColor: "#00e5ff30",
+                            border: "1px solid #00e5ff40",
+                            padding: "8px 12px",
+                            borderRadius: "100px",
+                            cursor: "pointer",
+                            fontWeight: "500",
+                            fontSize: "0.85rem",
+                            outline: "none",
                           }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#00e5ff20";
-                            e.currentTarget.style.borderColor = "#00e5ff";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "#1a1a1a";
-                            e.currentTarget.style.borderColor = "#00e5ff30";
-                          }}
-                          title="Ver cliente"
                         >
-                          <FiEye size={16} />
-                        </button>
+                          <option value="PENDING">Pendente</option>
+                          <option value="PAID">Paga</option>
+                          <option value="CANCELED">Cancelada</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: "18px 16px", textAlign: "center" }}>
+                        <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+                          <button
+                            onClick={() => navigate(`/clientes/ver/${f.clientId}`)}
+                            style={{
+                              ...botaoStyle,
+                              color: "#00e5ff",
+                              borderColor: "#00e5ff30",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#00e5ff20";
+                              e.currentTarget.style.borderColor = "#00e5ff";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "#1a1a1a";
+                              e.currentTarget.style.borderColor = "#00e5ff30";
+                            }}
+                            title="Ver cliente"
+                          >
+                            <FiEye size={16} />
+                          </button>
 
-                        <button
-                          onClick={() => handleExcluir(f.id)}
-                          style={{
-                            ...botaoStyle,
-                            color: "#ff5555",
-                            borderColor: "#ff555530",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#ff555520";
-                            e.currentTarget.style.borderColor = "#ff5555";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "#1a1a1a";
-                            e.currentTarget.style.borderColor = "#ff555530";
-                          }}
-                          title="Excluir"
-                        >
-                          <FiTrash2 size={16} />
-                        </button>
+                          <button
+                            onClick={() => handleExcluir(f.id)}
+                            style={{
+                              ...botaoStyle,
+                              color: "#ff5555",
+                              borderColor: "#ff555530",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#ff555520";
+                              e.currentTarget.style.borderColor = "#ff5555";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "#1a1a1a";
+                              e.currentTarget.style.borderColor = "#ff555530";
+                            }}
+                            title="Excluir"
+                          >
+                            <FiTrash2 size={16} />
+                          </button>
 
-                        <button
-                          onClick={() => handlePDF(f)}
-                          style={{
-                            ...botaoStyle,
-                            color: "#00e5ff",
-                            borderColor: "#00e5ff30",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#00e5ff20";
-                            e.currentTarget.style.borderColor = "#00e5ff";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "#1a1a1a";
-                            e.currentTarget.style.borderColor = "#00e5ff30";
-                          }}
-                          title="Gerar PDF"
-                        >
-                          <FiFileText size={16} />
-                        </button>
+                          <button
+                            onClick={() => handlePDF(f)}
+                            style={{
+                              ...botaoStyle,
+                              color: "#00e5ff",
+                              borderColor: "#00e5ff30",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#00e5ff20";
+                              e.currentTarget.style.borderColor = "#00e5ff";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "#1a1a1a";
+                              e.currentTarget.style.borderColor = "#00e5ff30";
+                            }}
+                            title="Gerar PDF"
+                          >
+                            <FiFileText size={16} />
+                          </button>
 
-                        <button
-                          onClick={() => handleWhatsApp(f)}
-                          style={{
-                            ...botaoStyle,
-                            color: "#25D366",
-                            borderColor: "#25D36630",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#25D36620";
-                            e.currentTarget.style.borderColor = "#25D366";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "#1a1a1a";
-                            e.currentTarget.style.borderColor = "#25D36630";
-                          }}
-                          title="Enviar WhatsApp"
-                        >
-                          <FiMessageCircle size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <button
+                            onClick={() => handleWhatsApp(f)}
+                            style={{
+                              ...botaoStyle,
+                              color: "#25D366",
+                              borderColor: "#25D36630",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#25D36620";
+                              e.currentTarget.style.borderColor = "#25D366";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "#1a1a1a";
+                              e.currentTarget.style.borderColor = "#25D36630";
+                            }}
+                            title="Enviar WhatsApp"
+                          >
+                            <FiMessageCircle size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {faturasFiltradas.length === 0 && (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={8}
                       style={{
                         padding: "60px 16px",
                         textAlign: "center",

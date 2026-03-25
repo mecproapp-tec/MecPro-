@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getEstimateStatusLabel } from '../../../utils/statusMaps';
 import {
   FiEdit,
   FiTrash2,
@@ -13,7 +12,7 @@ import {
 } from "react-icons/fi";
 import { getEstimates, deleteEstimate, updateEstimate } from "../../../services/Estimates";
 import { createInvoice } from "../../../services/invoices";
-import { getClients } from "../../../services/clients";
+import { getClients, getVehicleDisplay } from "../../../services/clients";
 import type { Estimate } from "../../../services/Estimates";
 import type { Client } from "../../../services/clients";
 import api from "../../../services/api";
@@ -32,7 +31,6 @@ const reverseStatusMap: Record<string, string> = {
   CONVERTED: "converted",
 };
 
-// Mapeamento para exibição em português
 const displayStatusMap: Record<string, string> = {
   pending: "Pendente",
   accepted: "Aceito",
@@ -41,7 +39,6 @@ const displayStatusMap: Record<string, string> = {
   APPROVED: "Aceito",
   CONVERTED: "Convertido",
 };
-
 
 function getStatusLabel(status: string): string {
   return displayStatusMap[status] || status;
@@ -124,13 +121,11 @@ export default function Orcamentos() {
 
   const handleConverter = async (orcamento: Estimate) => {
     try {
-      // Verifica se já foi convertido
       if (orcamento.status === "converted") {
         alert("Este orçamento já foi convertido em fatura.");
         return;
       }
 
-      // Criar a fatura
       const invoiceData = {
         clientId: orcamento.clientId,
         items: orcamento.items.map(item => ({
@@ -144,7 +139,6 @@ export default function Orcamentos() {
       };
       await createInvoice(invoiceData);
 
-      // Atualizar status do orçamento para "converted"
       const updatePayload = {
         clientId: orcamento.clientId,
         date: orcamento.date,
@@ -153,7 +147,6 @@ export default function Orcamentos() {
       };
       await updateEstimate(orcamento.id, updatePayload);
 
-      // Atualizar estado local
       setOrcamentos(prev =>
         prev.map(o => (o.id === orcamento.id ? { ...o, status: "converted" } : o))
       );
@@ -170,6 +163,7 @@ export default function Orcamentos() {
     return {
       nome: cliente?.name || "Cliente não encontrado",
       placa: cliente?.plate || "",
+      veiculo: cliente ? getVehicleDisplay(cliente) : "Não informado",
     };
   };
 
@@ -201,7 +195,7 @@ Seu orçamento está pronto ✅
 ${link}
 
 👤 Cliente: ${clienteInfo.nome}
-🚗 Placa: ${clienteInfo.placa}
+🚗 Veículo: ${clienteInfo.veiculo}
 💰 Total: R$ ${orcamento.total.toFixed(2)}
 📌 Status: ${getStatusLabel(orcamento.status)}`
       );
@@ -251,6 +245,7 @@ ${link}
             </div>
             <h1>Orçamento</h1>
             <p><strong>Cliente:</strong> ${clienteInfo.nome}</p>
+            <p><strong>Veículo:</strong> ${clienteInfo.veiculo}</p>
             <p><strong>Placa:</strong> ${clienteInfo.placa}</p>
             <p><strong>Data:</strong> ${new Date(orcamento.date).toLocaleDateString("pt-BR")}</p>
             <p><strong>Status:</strong> ${getStatusLabel(orcamento.status)}</p>
@@ -298,7 +293,6 @@ ${link}
     }
   };
 
-  // Filtro: exibe todos exceto convertidos, ou apenas o status selecionado
   const orcamentosFiltrados = orcamentos.filter((o) => {
     if (filtro === "todos") {
       return o.status !== "converted";
@@ -491,6 +485,9 @@ ${link}
                     Cliente
                   </th>
                   <th style={{ padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" }}>
+                    Veículo
+                  </th>
+                  <th style={{ padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" }}>
                     Placa
                   </th>
                   <th style={{ padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" }}>
@@ -526,6 +523,7 @@ ${link}
                       <td style={{ padding: "18px 16px", fontWeight: "500", color: "#fff" }}>
                         {clienteInfo.nome}
                       </td>
+                      <td style={{ padding: "18px 16px", color: "#b0b0b0" }}>{clienteInfo.veiculo}</td>
                       <td style={{ padding: "18px 16px", color: "#b0b0b0" }}>{clienteInfo.placa}</td>
                       <td style={{ padding: "18px 16px", color: "#b0b0b0" }}>
                         {new Date(o.date).toLocaleDateString("pt-BR")}
@@ -745,7 +743,7 @@ ${link}
                 {orcamentosFiltrados.length === 0 && (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       style={{
                         padding: "60px 16px",
                         textAlign: "center",
