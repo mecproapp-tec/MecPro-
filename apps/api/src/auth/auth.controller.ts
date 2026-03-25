@@ -2,6 +2,7 @@
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { JwtAuthGuard } from './guards/jwt.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -42,7 +43,7 @@ export class AuthController {
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   async logout(@Req() req: Request) {
-    const user = req.user as any;
+    const user = req.user as { id: number; sessionToken: string };
     return this.authService.logout(user.id, user.sessionToken);
   }
 }
