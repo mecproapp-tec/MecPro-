@@ -1,19 +1,6 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Param,
-  Body,
-  Req,
-  UseGuards,
-  UnauthorizedException,
-} from '@nestjs/common';
-
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { ClientsService } from './clients.service';
-import { Client } from '@prisma/client';
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../../auth/guards/jwt.guard';
 
 @Controller('clients')
 @UseGuards(JwtAuthGuard)
@@ -21,44 +8,27 @@ export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
   @Post()
-  async create(
-    @Body() data: { name: string; phone: string; vehicle: string; plate: string },
-    @Req() req,
-  ): Promise<Client> {
-    if (!req.user) throw new UnauthorizedException();
-
+  create(@Body() data: any, @Req() req) {
     return this.clientsService.create(req.user.tenantId, data);
   }
 
   @Get()
-  async findAll(@Req() req): Promise<Client[]> {
-    if (!req.user) throw new UnauthorizedException();
-
+  findAll(@Req() req) {
     return this.clientsService.findAll(req.user.tenantId);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string, @Req() req): Promise<Client> {
-    if (!req.user) throw new UnauthorizedException();
-
+  findOne(@Param('id') id: string, @Req() req) {
     return this.clientsService.findOne(Number(id), req.user.tenantId);
   }
 
   @Put(':id')
-  async update(
-    @Param('id') id: string,
-    @Body() data: Partial<Client>,
-    @Req() req,
-  ): Promise<Client> {
-    if (!req.user) throw new UnauthorizedException();
-
+  update(@Param('id') id: string, @Body() data: any, @Req() req) {
     return this.clientsService.update(Number(id), req.user.tenantId, data);
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string, @Req() req) {
-    if (!req.user) throw new UnauthorizedException();
-
+  remove(@Param('id') id: string, @Req() req) {
     return this.clientsService.remove(Number(id), req.user.tenantId);
   }
 }
