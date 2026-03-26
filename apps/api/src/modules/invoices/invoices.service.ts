@@ -4,7 +4,6 @@ import {
   BadRequestException,
   UnauthorizedException,
   Logger,
-  OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,7 +16,7 @@ import { StorageService } from '../storage/storage.service';
 import { InvoicesPdfService } from './invoices-pdf.service';
 
 @Injectable()
-export class InvoicesService implements OnModuleInit {
+export class InvoicesService {
   private readonly logger = new Logger(InvoicesService.name);
   private redisAvailable = true;
 
@@ -28,20 +27,22 @@ export class InvoicesService implements OnModuleInit {
     private storageService: StorageService,
     private invoicesPdfService: InvoicesPdfService,
     @InjectQueue('pdf-invoice') private pdfQueue: Queue,
-  ) {}
-
-  async onModuleInit() {
-    await this.checkRedisConnection();
+  ) {
+    this.checkRedisConnection();
   }
 
   private async checkRedisConnection() {
     try {
-      const client = this.pdfQueue.client;
-      await client.ping();
-      this.logger.log('Redis disponível para filas');
-      this.redisAvailable = true;
+      const client = this.pdfQueue?.client;
+      if (client) {
+        await client.ping();
+        this.logger.log('Redis disponível');
+        this.redisAvailable = true;
+      } else {
+        this.redisAvailable = false;
+      }
     } catch (error) {
-      this.logger.error(`Redis indisponível: ${error.message}. Usando fallback síncrono.`);
+      this.logger.error('Redis indisponível, usando fallback síncrono', error.message);
       this.redisAvailable = false;
     }
   }
@@ -211,27 +212,34 @@ export class InvoicesService implements OnModuleInit {
       where: { id: invoice.tenantId },
     });
 
-    if (!invoice.pdfUrl || invoice.pdfStatus !== 'generated') {
-      const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, tenant);
-      const key = `${invoice.tenantId}/invoices/${invoice.id}.pdf`;
-      const url = await this.storageService.upload(pdfBuffer, key);
-
-      await this.prisma.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          pdfUrl: url,
-          pdfStatus: 'generated',
-          pdfGeneratedAt: new Date(),
-        },
-      });
-
-      return pdfBuffer;
-    } else {
-      const response = await fetch(invoice.pdfUrl);
-      if (!response.ok) throw new Error('Erro ao buscar PDF do storage');
-      const arrayBuffer = await response.arrayBuffer();
-      return Buffer.from(arrayBuffer);
+    // Se já tiver PDF gerado, busca do storage
+    if (invoice.pdfUrl && invoice.pdfStatus === 'generated') {
+      try {
+        const response = await fetch(invoice.pdfUrl);
+        if (!response.ok) throw new Error('Erro ao buscar PDF do storage');
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+      } catch (error) {
+        this.logger.error(`Erro ao buscar PDF do storage para fatura ${invoice.id}`, error);
+        // Se falhar, gera novamente (fallback)
+      }
     }
+
+    // Gerar PDF agora (síncrono) e armazenar
+    const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, tenant);
+    const key = `${invoice.tenantId}/invoices/${invoice.id}.pdf`;
+    const url = await this.storageService.upload(pdfBuffer, key);
+
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        pdfUrl: url,
+        pdfStatus: 'generated',
+        pdfGeneratedAt: new Date(),
+      },
+    });
+
+    return pdfBuffer;
   }
 
   async sendViaWhatsApp(
@@ -253,11 +261,7 @@ export class InvoicesService implements OnModuleInit {
       const pdfUrl = invoice.pdfUrl;
       const message = this.buildWhatsAppMessage(invoice, pdfUrl);
       const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
-      return {
-        whatsappLink,
-        message,
-        pdfUrl,
-      };
+      return { whatsappLink, message, pdfUrl };
     }
 
     const tenant = invoice.tenant;
@@ -267,10 +271,11 @@ export class InvoicesService implements OnModuleInit {
       client: invoice.client,
     };
 
+    // Fallback: se Redis não estiver disponível, gera PDF síncrono
     if (!this.redisAvailable) {
-      this.logger.warn(`Redis indisponível: gerando PDF síncrono para fatura ${id}`);
+      this.logger.warn(`Gerando PDF síncrono para fatura ${id} (Redis indisponível)`);
       try {
-        const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoiceData, tenant);
+        const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, tenant);
         const key = `${tenantId}/invoices/${id}.pdf`;
         const url = await this.storageService.upload(pdfBuffer, key);
 
@@ -285,17 +290,14 @@ export class InvoicesService implements OnModuleInit {
 
         const message = this.buildWhatsAppMessage(invoice, url);
         const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
-        return {
-          whatsappLink,
-          message,
-          pdfUrl: url,
-        };
+        return { whatsappLink, message, pdfUrl: url };
       } catch (error) {
         this.logger.error(`Falha ao gerar PDF síncrono para fatura ${id}`, error);
         throw new BadRequestException('Erro ao gerar PDF. Tente novamente mais tarde.');
       }
     }
 
+    // Modo normal com fila
     await this.pdfQueue.add('generate-invoice-pdf', {
       tenantId,
       invoiceId: id,

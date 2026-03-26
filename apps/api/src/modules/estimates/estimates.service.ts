@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  UnauthorizedException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EstimateStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
@@ -10,7 +16,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 
 @Injectable()
-export class EstimatesService implements OnModuleInit {
+export class EstimatesService {
   private readonly logger = new Logger(EstimatesService.name);
   private redisAvailable = true;
 
@@ -21,20 +27,22 @@ export class EstimatesService implements OnModuleInit {
     private configService: ConfigService,
     private storageService: StorageService,
     @InjectQueue('pdf-estimate') private pdfQueue: Queue,
-  ) {}
-
-  async onModuleInit() {
-    await this.checkRedisConnection();
+  ) {
+    this.checkRedisConnection();
   }
 
   private async checkRedisConnection() {
     try {
-      const client = this.pdfQueue.client;
-      await client.ping();
-      this.logger.log('Redis disponível para filas');
-      this.redisAvailable = true;
+      const client = this.pdfQueue?.client;
+      if (client) {
+        await client.ping();
+        this.logger.log('Redis disponível');
+        this.redisAvailable = true;
+      } else {
+        this.redisAvailable = false;
+      }
     } catch (error) {
-      this.logger.error(`Redis indisponível: ${error.message}. Usando fallback síncrono.`);
+      this.logger.error('Redis indisponível, usando fallback síncrono', error.message);
       this.redisAvailable = false;
     }
   }
@@ -211,11 +219,7 @@ export class EstimatesService implements OnModuleInit {
       const pdfUrl = estimate.pdfUrl;
       const message = this.buildWhatsAppMessage(estimate, pdfUrl);
       const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
-      return {
-        whatsappLink,
-        message,
-        pdfUrl,
-      };
+      return { whatsappLink, message, pdfUrl };
     }
 
     const tenant = estimate.tenant;
@@ -225,10 +229,11 @@ export class EstimatesService implements OnModuleInit {
       client: estimate.client,
     };
 
+    // Fallback: se Redis não estiver disponível, gera PDF síncrono
     if (!this.redisAvailable) {
-      this.logger.warn(`Redis indisponível: gerando PDF síncrono para orçamento ${id}`);
+      this.logger.warn(`Gerando PDF síncrono para orçamento ${id} (Redis indisponível)`);
       try {
-        const pdfBuffer = await this.estimatesPdfService.generateEstimatePdf(estimateData, tenant);
+        const pdfBuffer = await this.estimatesPdfService.generateEstimatePdf(estimate, tenant);
         const key = `${tenantId}/estimates/${id}.pdf`;
         const url = await this.storageService.upload(pdfBuffer, key);
 
@@ -243,17 +248,14 @@ export class EstimatesService implements OnModuleInit {
 
         const message = this.buildWhatsAppMessage(estimate, url);
         const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
-        return {
-          whatsappLink,
-          message,
-          pdfUrl: url,
-        };
+        return { whatsappLink, message, pdfUrl: url };
       } catch (error) {
         this.logger.error(`Falha ao gerar PDF síncrono para orçamento ${id}`, error);
         throw new BadRequestException('Erro ao gerar PDF. Tente novamente mais tarde.');
       }
     }
 
+    // Modo normal com fila
     await this.pdfQueue.add('generate-estimate-pdf', {
       tenantId,
       estimateId: id,
