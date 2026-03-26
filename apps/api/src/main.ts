@@ -1,4 +1,3 @@
-// Define o fuso horário para o Brasil (São Paulo)
 process.env.TZ = 'America/Sao_Paulo';
 
 import { NestFactory } from '@nestjs/core';
@@ -7,7 +6,6 @@ import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 
 async function bootstrap() {
-  // Captura erros não tratados
   process.on('unhandledRejection', (reason) => {
     console.error('❌ Unhandled Rejection:', reason);
   });
@@ -22,11 +20,13 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
-  app.use(helmet({
-    crossOriginResourcePolicy: false,
-    crossOriginOpenerPolicy: false,
-    crossOriginEmbedderPolicy: false,
-  }));
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+      crossOriginOpenerPolicy: false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
 
   app.enableCors({
     origin: (origin, callback) => {
@@ -69,7 +69,13 @@ async function bootstrap() {
     next();
   });
 
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
   app.setGlobalPrefix('api');
 
   const httpAdapter = app.getHttpAdapter();
@@ -82,7 +88,6 @@ async function bootstrap() {
 
   try {
     console.log(`📡 Tentando iniciar servidor em ${host}:${port}`);
-    
     const server = await app.listen(port, host);
     const address = server.address();
     console.log(`✅ Servidor ouvindo em http://${host}:${port}`);
@@ -92,33 +97,6 @@ async function bootstrap() {
     console.error('❌ Falha ao iniciar servidor:', err);
     process.exit(1);
   }
-
-  
 }
+
 bootstrap();
-
-import fs from 'fs';
-import path from 'path';
-
-function debugTemplates() {
-  const base = process.cwd();
-
-  console.log('📁 ROOT:', base);
-
-  function listDir(dir: string) {
-    try {
-      const files = fs.readdirSync(dir);
-      console.log(`📂 ${dir}:`, files);
-    } catch (err) {
-      console.log(`❌ ${dir} não existe`);
-    }
-  }
-
-  listDir(base);
-  listDir(path.join(base, 'src'));
-  listDir(path.join(base, 'dist'));
-  listDir(path.join(base, 'templates'));
-  listDir(path.join(base, 'dist/templates'));
-}
-
-debugTemplates();
