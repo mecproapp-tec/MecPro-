@@ -77,7 +77,6 @@ export class EstimatesService {
         pdfUrl: true,
         pdfStatus: true,
         createdAt: true,
-        updatedAt: true,
         client: {
           select: {
             id: true,
@@ -116,7 +115,6 @@ export class EstimatesService {
         pdfStatus: true,
         pdfGeneratedAt: true,
         createdAt: true,
-        updatedAt: true,
         shareToken: true,
         shareTokenExpires: true,
         client: {

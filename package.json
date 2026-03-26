@@ -18,6 +18,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.95.2",
     "puppeteer": "^24.40.0"
   }
 }

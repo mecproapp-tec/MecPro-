@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiEdit, FiTrash2, FiCalendar, FiPlus, FiClock, FiArrowLeft, FiEye } from "react-icons/fi";
 
-import { getClients, deleteClient, type Client } from "../../../services/clients";
+import { getClients, deleteClient, type Client, getVehicleDisplay } from "../../../services/clients";
 import { getAppointments, type Appointment } from "../../../services/appointments";
 
 export default function Clientes() {
@@ -47,8 +47,7 @@ export default function Clientes() {
     }
   };
 
-  // Memoize the mapping from clientId to next appointment
-  const nextAppointmentMap = useMemo(() => {
+  const proximoAgendamentoPorCliente = useMemo(() => {
     const agora = new Date();
     const futuros = agendamentos
       .filter(a => new Date(a.date) > agora)
@@ -64,7 +63,7 @@ export default function Clientes() {
   }, [agendamentos]);
 
   const obterProximoAgendamento = (clienteId: number): Appointment | null => {
-    return nextAppointmentMap.get(clienteId) || null;
+    return proximoAgendamentoPorCliente.get(clienteId) || null;
   };
 
   const abrirAgendamento = (appointmentId: number) => {
@@ -217,9 +216,9 @@ export default function Clientes() {
                     <span style={{ fontWeight: 600, fontSize: "1.2rem", color: "#fff" }}>
                       {cliente.name}
                     </span>
-                    <span style={{ color: "#b0b0b0" }}>{cliente.vehicle}</span>
+                    <span style={{ color: "#b0b0b0" }}>{cliente.vehicle || "Não informado"}</span>
                     <span style={{ color: "#b0b0b0", fontFamily: "monospace" }}>
-                      {cliente.plate}
+                      {cliente.plate || "Não informado"}
                     </span>
 
                     {proximoAgendamento && (
