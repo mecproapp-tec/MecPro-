@@ -1,7 +1,6 @@
-# ---------- Estágio 1: Builder ----------
 FROM node:20-bullseye AS builder
 
-# Instalar dependências do sistema para o Puppeteer
+# Instalar dependências do sistema e Chromium
 RUN apt-get update && apt-get install -y \
     libnss3 \
     libx11-xcb1 \
@@ -16,6 +15,7 @@ RUN apt-get update && apt-get install -y \
     libgtk-3-0 \
     libgbm1 \
     libxshmfence1 \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -24,14 +24,16 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma
 
-# Instalar todas as dependências (incluindo dev)
+# Instalar dependências (incluindo dev)
 RUN npm ci
 
-# Gerar Prisma Client (usando o executável local)
+# Gerar Prisma Client
 RUN npx prisma generate
 
-# Copiar o código fonte e construir
+# Copiar código fonte
 COPY . .
+
+# Build do NestJS
 RUN npm run build
 
 # Copiar templates manualmente (garantir que estejam no dist)
@@ -39,9 +41,10 @@ COPY src/modules/pdf/templates dist/modules/pdf/templates/
 COPY src/modules/estimates/*.hbs dist/modules/estimates/
 COPY src/modules/invoices/*.hbs dist/modules/invoices/
 
-# ---------- Estágio 2: Produção ----------
+# ---------- Estágio de produção ----------
 FROM node:20-bullseye
 
+# Instalar dependências do sistema e Chromium novamente
 RUN apt-get update && apt-get install -y \
     libnss3 \
     libx11-xcb1 \
@@ -56,7 +59,11 @@ RUN apt-get update && apt-get install -y \
     libgtk-3-0 \
     libgbm1 \
     libxshmfence1 \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
+
+# Definir variável de ambiente para o Puppeteer usar o Chromium do sistema
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
@@ -66,8 +73,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/prisma ./prisma
 
-# Copiar também os templates (caso não tenham sido copiados pelo build)
-# (Já foram copiados no builder, mas garantimos novamente)
+# Copiar templates (já copiados no builder, mas garantimos)
 COPY --from=builder /app/dist/modules/pdf/templates ./dist/modules/pdf/templates
 COPY --from=builder /app/dist/modules/estimates/*.hbs ./dist/modules/estimates/
 COPY --from=builder /app/dist/modules/invoices/*.hbs ./dist/modules/invoices/
