@@ -51,22 +51,15 @@ export class InvoicesController {
       Number(id),
       req.user.tenantId,
     );
-
     const baseUrl =
       process.env.APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
-
-    // ✅ URL CORRETA COM /api
     const url = `${baseUrl}/api/public/invoices/share/${token}`;
-
     return { url };
   }
 
   @Post(':id/send-whatsapp')
   async sendViaWhatsApp(@Param('id') id: string, @Req() req) {
-    return this.invoicesService.sendViaWhatsApp(
-      Number(id),
-      req.user.tenantId,
-    );
+    return this.invoicesService.sendViaWhatsApp(Number(id), req.user.tenantId);
   }
 }
 
@@ -77,31 +70,23 @@ export class PublicInvoicesController {
   @Public()
   @Get('share/:token')
   async getSharedPdf(@Param('token') token: string, @Res() res: Response) {
+    console.log(`[PublicInvoices] Recebido token: ${token}`);
     if (!token) {
+      console.error('[PublicInvoices] Token não fornecido');
       return res.status(400).send('Token não fornecido');
     }
 
     try {
-      const pdfBuffer =
-        await this.invoicesService.getPdfByShareToken(token);
-
+      const pdfBuffer = await this.invoicesService.getPdfByShareToken(token);
+      console.log(`[PublicInvoices] PDF gerado, enviando...`);
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader(
-        'Content-Disposition',
-        'inline; filename=fatura.pdf',
-      );
-
+      res.setHeader('Content-Disposition', 'inline; filename=fatura.pdf');
       return res.send(pdfBuffer);
     } catch (error) {
-      console.error('Erro ao gerar PDF:', error);
-
-      if (
-        error.message === 'Token inválido' ||
-        error.message === 'Token expirado'
-      ) {
+      console.error('[PublicInvoices] Erro ao gerar PDF:', error);
+      if (error.message === 'Token inválido' || error.message === 'Token expirado') {
         return res.status(404).send('Link inválido ou expirado');
       }
-
       return res.status(500).send('Erro ao gerar PDF');
     }
   }

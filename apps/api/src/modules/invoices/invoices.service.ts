@@ -38,7 +38,6 @@ export class InvoicesService {
     const itemsWithTotal = data.items.map((item) => {
       const iss = item.issPercent ? item.price * (item.issPercent / 100) : 0;
       const total = (item.price + iss) * item.quantity;
-
       return {
         description: item.description,
         quantity: item.quantity,
@@ -79,7 +78,6 @@ export class InvoicesService {
     });
 
     if (!invoice) throw new NotFoundException('Fatura não encontrada');
-
     return invoice;
   }
 
@@ -115,10 +113,7 @@ export class InvoicesService {
         total,
         items: { create: itemsWithTotal },
       };
-
-      if (updateData.status) {
-        dataToUpdate.status = updateData.status;
-      }
+      if (updateData.status) dataToUpdate.status = updateData.status;
 
       return this.prisma.invoice.update({
         where: { id },
@@ -140,19 +135,13 @@ export class InvoicesService {
 
   async remove(id: number, tenantId: string) {
     await this.findOne(id, tenantId);
-
-    await this.prisma.invoiceItem.deleteMany({
-      where: { invoiceId: id },
-    });
-
-    await this.prisma.invoice.delete({
-      where: { id },
-    });
-
+    await this.prisma.invoiceItem.deleteMany({ where: { invoiceId: id } });
+    await this.prisma.invoice.delete({ where: { id } });
     return { message: 'Fatura removida com sucesso' };
   }
 
   private async generatePdfFromInvoice(invoice: any, tenant: any): Promise<Buffer> {
+    console.log(`[InvoicesService] Gerando PDF da fatura ${invoice.id}`);
     const templatePath = path.join(__dirname, 'invoice-pdf.hbs');
     const templateContent = await fs.readFile(templatePath, 'utf-8');
     const compiledTemplate = Handlebars.compile(templateContent);
@@ -162,10 +151,10 @@ export class InvoicesService {
       tenant,
     });
 
+    console.log(`[InvoicesService] Lançando puppeteer...`);
     const browser = await puppeteer.launch({
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
-
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
 
@@ -175,17 +164,15 @@ export class InvoicesService {
     });
 
     await browser.close();
-
+    console.log(`[InvoicesService] PDF gerado, tamanho: ${pdf.length} bytes`);
     return Buffer.from(pdf);
   }
 
   async generatePdf(id: number, tenantId: string): Promise<Buffer> {
     const invoice = await this.findOne(id, tenantId);
-
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
     });
-
     return this.generatePdfFromInvoice(invoice, tenant);
   }
 
@@ -201,7 +188,6 @@ export class InvoicesService {
     }
 
     const token = randomBytes(32).toString('hex');
-
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
@@ -219,34 +205,34 @@ export class InvoicesService {
   async validateShareToken(token: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { shareToken: token },
-      include: {
-        items: true,
-        client: true,
-      },
+      include: { items: true, client: true },
     });
 
     if (!invoice) {
       throw new UnauthorizedException('Token inválido');
     }
-
-    if (
-      invoice.shareTokenExpires &&
-      new Date() > invoice.shareTokenExpires
-    ) {
+    if (invoice.shareTokenExpires && new Date() > invoice.shareTokenExpires) {
       throw new UnauthorizedException('Token expirado');
     }
-
     return invoice;
   }
 
   async getPdfByShareToken(token: string): Promise<Buffer> {
+    console.log(`[InvoicesService] Buscando PDF para token: ${token}`);
     const invoice = await this.validateShareToken(token);
-
+    console.log(`[InvoicesService] Fatura encontrada: ${invoice.id}`);
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: invoice.tenantId },
     });
-
-    return this.generatePdfFromInvoice(invoice, tenant);
+    console.log(`[InvoicesService] Tenant: ${tenant?.id}`);
+    try {
+      const pdf = await this.generatePdfFromInvoice(invoice, tenant);
+      console.log(`[InvoicesService] PDF gerado com sucesso`);
+      return pdf;
+    } catch (err) {
+      console.error(`[InvoicesService] Erro ao gerar PDF:`, err);
+      throw err;
+    }
   }
 
   async sendViaWhatsApp(id: number, tenantId: string) {

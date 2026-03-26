@@ -56,8 +56,7 @@ export class EstimatesController {
       req.user.tenantId,
     );
     const baseUrl = process.env.APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
-    const apiBasePath = process.env.API_BASE_PATH || '/api';
-    const url = `${baseUrl}${apiBasePath}/public/estimates/share/${token}`;
+    const url = `${baseUrl}/api/public/estimates/share/${token}`;
     return { url };
   }
 
@@ -76,21 +75,22 @@ export class PublicEstimatesController {
   async getSharedPdf(@Param('token') token: string, @Res() res: Response) {
     console.log(`[PublicEstimates] Recebido token: ${token}`);
     if (!token) {
+      console.error('[PublicEstimates] Token não fornecido');
       return res.status(400).send('Token não fornecido');
     }
 
     try {
       const pdfBuffer = await this.estimatesService.getPdfByShareToken(token);
+      console.log(`[PublicEstimates] PDF gerado, enviando...`);
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename=orcamento-compartilhado.pdf`);
-      res.send(pdfBuffer);
+      res.setHeader('Content-Disposition', 'inline; filename=orcamento.pdf');
+      return res.send(pdfBuffer);
     } catch (error) {
       console.error('[PublicEstimates] Erro ao gerar PDF:', error);
       if (error.message === 'Token inválido' || error.message === 'Token expirado') {
-        res.status(404).send('Link inválido ou expirado');
-      } else {
-        res.status(500).send('Erro ao gerar PDF. Tente novamente mais tarde.');
+        return res.status(404).send('Link inválido ou expirado');
       }
+      return res.status(500).send('Erro ao gerar PDF');
     }
   }
 }

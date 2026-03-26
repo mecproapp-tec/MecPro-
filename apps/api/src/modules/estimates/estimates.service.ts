@@ -155,18 +155,23 @@ export class EstimatesService {
     return estimate;
   }
 
- async getPdfByShareToken(token: string): Promise<Buffer> {
-  console.log(`[Estimates] Buscando PDF para token: ${token}`);
-  const estimate = await this.validateShareToken(token);
-  console.log(`[Estimates] Orçamento encontrado: ${estimate.id}`);
-  const tenant = await this.prisma.tenant.findUnique({
-    where: { id: estimate.tenantId },
-  });
-  console.log(`[Estimates] Tenant encontrado: ${tenant?.id}`);
-  const pdf = await this.estimatesPdfService.generateEstimatePdf(estimate, tenant);
-  console.log(`[Estimates] PDF gerado, tamanho: ${pdf.length} bytes`);
-  return pdf;
-}
+  async getPdfByShareToken(token: string): Promise<Buffer> {
+    console.log(`[EstimatesService] Buscando PDF para token: ${token}`);
+    const estimate = await this.validateShareToken(token);
+    console.log(`[EstimatesService] Orçamento encontrado: ${estimate.id}`);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: estimate.tenantId },
+    });
+    console.log(`[EstimatesService] Tenant: ${tenant?.id}`);
+    try {
+      const pdf = await this.estimatesPdfService.generateEstimatePdf(estimate, tenant);
+      console.log(`[EstimatesService] PDF gerado, tamanho: ${pdf.length} bytes`);
+      return pdf;
+    } catch (err) {
+      console.error(`[EstimatesService] Erro ao gerar PDF:`, err);
+      throw err;
+    }
+  }
 
   async sendViaWhatsApp(
     id: number,
@@ -187,7 +192,6 @@ export class EstimatesService {
 
     const pdfUrl = `${baseUrl}/api/public/estimates/share/${token}`;
 
-    // 🔥 Mensagem com link isolado em linha própria
     const message = `Olá ${client.name}!
 
 Seu orçamento está pronto ✅
