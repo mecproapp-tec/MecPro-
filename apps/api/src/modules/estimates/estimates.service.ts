@@ -182,6 +182,7 @@ export class EstimatesService {
   async sendViaWhatsApp(
     id: number,
     tenantId: string,
+    workshopData?: any, // dados da oficina vindos do frontend
   ): Promise<{ whatsappLink: string; message: string; pdfUrl: string }> {
     const estimate = await this.prisma.estimate.findFirst({
       where: { id, tenantId },
@@ -194,7 +195,6 @@ export class EstimatesService {
       throw new BadRequestException('Cliente não possui telefone cadastrado');
     }
 
-    // Se já tiver PDF, usa o link existente
     if (estimate.pdfUrl && estimate.pdfStatus === 'generated') {
       const pdfUrl = estimate.pdfUrl;
       const message = this.buildWhatsAppMessage(estimate, pdfUrl);
@@ -202,10 +202,20 @@ export class EstimatesService {
       return { whatsappLink, message, pdfUrl };
     }
 
-    // Gera PDF síncrono
-    const tenant = estimate.tenant;
-    this.logger.log(`Gerando PDF síncrono para orçamento ${id}`);
-    const pdfBuffer = await this.estimatesPdfService.generateEstimatePdf(estimate, tenant);
+    // Dados efetivos da oficina: prioriza workshopData (frontend) e completa com tenant
+    const effectiveTenant = workshopData
+      ? {
+          ...estimate.tenant,
+          name: workshopData.name || estimate.tenant.name,
+          documentNumber: workshopData.documentNumber || estimate.tenant.documentNumber,
+          phone: workshopData.phone || estimate.tenant.phone,
+          email: workshopData.email || estimate.tenant.email,
+          logoUrl: workshopData.logoUrl || estimate.tenant.logoUrl,
+        }
+      : estimate.tenant;
+
+    this.logger.log(`Gerando PDF síncrono para orçamento ${id} usando dados ${workshopData ? 'do frontend' : 'do tenant'}`);
+    const pdfBuffer = await this.estimatesPdfService.generateEstimatePdf(estimate, effectiveTenant);
     const key = `${tenantId}/estimates/${id}.pdf`;
     const url = await this.storageService.upload(pdfBuffer, key);
 

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as Handlebars from 'handlebars';
@@ -6,7 +6,11 @@ import puppeteer from 'puppeteer';
 
 @Injectable()
 export class InvoicesPdfService {
+  private readonly logger = new Logger(InvoicesPdfService.name);
+
   async generateInvoicePdf(invoice: any, tenant: any): Promise<Buffer> {
+    this.logger.log(`Gerando PDF da fatura ${invoice.id}, tenant: ${tenant?.id}`);
+
     const client = invoice.client;
 
     const vehicleDetails =
@@ -39,6 +43,12 @@ export class InvoicesPdfService {
     const total = subtotal + issTotal;
 
     const templatePath = path.join(__dirname, 'invoice-pdf.hbs');
+    this.logger.debug(`Template path: ${templatePath}`);
+
+    if (!fs.existsSync(templatePath)) {
+      throw new Error(`Template não encontrado: ${templatePath}`);
+    }
+
     const templateContent = fs.readFileSync(templatePath, 'utf8');
     const template = Handlebars.compile(templateContent);
 
@@ -68,11 +78,13 @@ export class InvoicesPdfService {
     };
 
     const html = template(data);
+    this.logger.debug(`HTML gerado, tamanho: ${html.length}`);
 
+    this.logger.log('Lançando Puppeteer...');
     const browser = await puppeteer.launch({
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, // força o caminho
     });
-
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
 
@@ -82,6 +94,7 @@ export class InvoicesPdfService {
     });
 
     await browser.close();
+    this.logger.log(`PDF gerado, tamanho: ${pdfUint8.length} bytes`);
 
     return Buffer.from(pdfUint8);
   }

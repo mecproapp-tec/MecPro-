@@ -58,8 +58,16 @@ export class InvoicesController {
   }
 
   @Post(':id/send-whatsapp')
-  async sendViaWhatsApp(@Param('id') id: string, @Req() req) {
-    return this.invoicesService.sendViaWhatsApp(Number(id), req.user.tenantId);
+  async sendViaWhatsApp(
+    @Param('id') id: string,
+    @Body() body: { workshopData?: any },
+    @Req() req,
+  ) {
+    return this.invoicesService.sendViaWhatsApp(
+      Number(id),
+      req.user.tenantId,
+      body.workshopData,
+    );
   }
 }
 

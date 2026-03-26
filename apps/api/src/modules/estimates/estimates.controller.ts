@@ -61,8 +61,16 @@ export class EstimatesController {
   }
 
   @Post(':id/send-whatsapp')
-  async sendViaWhatsApp(@Param('id') id: string, @Req() req) {
-    return this.estimatesService.sendViaWhatsApp(Number(id), req.user.tenantId);
+  async sendViaWhatsApp(
+    @Param('id') id: string,
+    @Body() body: { workshopData?: any }, // aceita workshopData do frontend
+    @Req() req,
+  ) {
+    return this.estimatesService.sendViaWhatsApp(
+      Number(id),
+      req.user.tenantId,
+      body.workshopData,
+    );
   }
 }
 

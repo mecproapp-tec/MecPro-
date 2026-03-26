@@ -190,7 +190,6 @@ export class InvoicesService {
       where: { id: invoice.tenantId },
     });
 
-    // Se já tiver PDF gerado, busca do storage
     if (invoice.pdfUrl && invoice.pdfStatus === 'generated') {
       try {
         const response = await fetch(invoice.pdfUrl);
@@ -199,11 +198,9 @@ export class InvoicesService {
         return Buffer.from(arrayBuffer);
       } catch (error) {
         this.logger.error(`Erro ao buscar PDF do storage para fatura ${invoice.id}`, error);
-        // Se falhar, gera novamente (fallback)
       }
     }
 
-    // Gerar PDF agora (síncrono) e armazenar
     const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, tenant);
     const key = `${invoice.tenantId}/invoices/${invoice.id}.pdf`;
     const url = await this.storageService.upload(pdfBuffer, key);
@@ -223,6 +220,7 @@ export class InvoicesService {
   async sendViaWhatsApp(
     id: number,
     tenantId: string,
+    workshopData?: any, // dados da oficina vindos do frontend
   ): Promise<{ whatsappLink: string; message: string; pdfUrl: string }> {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, tenantId },
@@ -235,7 +233,6 @@ export class InvoicesService {
       throw new BadRequestException('Cliente sem telefone');
     }
 
-    // Se já tiver PDF, usa o link existente
     if (invoice.pdfUrl && invoice.pdfStatus === 'generated') {
       const pdfUrl = invoice.pdfUrl;
       const message = this.buildWhatsAppMessage(invoice, pdfUrl);
@@ -243,10 +240,20 @@ export class InvoicesService {
       return { whatsappLink, message, pdfUrl };
     }
 
-    // Gera PDF síncrono
-    const tenant = invoice.tenant;
-    this.logger.log(`Gerando PDF síncrono para fatura ${id}`);
-    const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, tenant);
+    // Dados efetivos da oficina: prioriza workshopData (frontend) e completa com tenant
+    const effectiveTenant = workshopData
+      ? {
+          ...invoice.tenant,
+          name: workshopData.name || invoice.tenant.name,
+          documentNumber: workshopData.documentNumber || invoice.tenant.documentNumber,
+          phone: workshopData.phone || invoice.tenant.phone,
+          email: workshopData.email || invoice.tenant.email,
+          logoUrl: workshopData.logoUrl || invoice.tenant.logoUrl,
+        }
+      : invoice.tenant;
+
+    this.logger.log(`Gerando PDF síncrono para fatura ${id} usando dados ${workshopData ? 'do frontend' : 'do tenant'}`);
+    const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, effectiveTenant);
     const key = `${tenantId}/invoices/${id}.pdf`;
     const url = await this.storageService.upload(pdfBuffer, key);
 
