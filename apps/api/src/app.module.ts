@@ -17,8 +17,6 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { AppointmentsModule } from "./modules/appointments/appointments.module";
 import { ContactModule } from "./modules/contact/contact.module";
 import { WhatsappModule } from "./modules/whatsapp/whatsapp.module";
-import { QueueModule } from "./modules/common/queues/queue.module";
-import { PdfModule } from "./modules/pdf/pdf.module";
 import { StorageModule } from "./modules/storage/storage.module";
 
 import { AppController } from "./app.controller";
@@ -42,8 +40,6 @@ import { AppService } from "./app.service";
     AppointmentsModule,
     ContactModule,
     WhatsappModule,
-    QueueModule,
-    PdfModule,
     StorageModule,
   ],
   controllers: [AppController],

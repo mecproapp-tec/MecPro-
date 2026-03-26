@@ -12,13 +12,10 @@ import { EstimatesPdfService } from './estimates-pdf.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { ConfigService } from '@nestjs/config';
 import { StorageService } from '../storage/storage.service';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 
 @Injectable()
 export class EstimatesService {
   private readonly logger = new Logger(EstimatesService.name);
-  private redisAvailable = true;
 
   constructor(
     private prisma: PrismaService,
@@ -26,26 +23,7 @@ export class EstimatesService {
     private whatsappService: WhatsappService,
     private configService: ConfigService,
     private storageService: StorageService,
-    @InjectQueue('pdf-estimate') private pdfQueue: Queue,
-  ) {
-    this.checkRedisConnection();
-  }
-
-  private async checkRedisConnection() {
-    try {
-      const client = this.pdfQueue?.client;
-      if (client) {
-        await client.ping();
-        this.logger.log('Redis disponível');
-        this.redisAvailable = true;
-      } else {
-        this.redisAvailable = false;
-      }
-    } catch (error) {
-      this.logger.error('Redis indisponível, usando fallback síncrono', error.message);
-      this.redisAvailable = false;
-    }
-  }
+  ) {}
 
   async create(tenantId: string, data: { clientId: number; date: string; items: any[] }) {
     const client = await this.prisma.client.findFirst({
@@ -196,6 +174,7 @@ export class EstimatesService {
       const pdf = await this.estimatesPdfService.generateEstimatePdf(estimate, tenant);
       return pdf;
     } catch (err) {
+      this.logger.error(`Erro ao gerar PDF por token: ${err.message}`);
       throw err;
     }
   }
@@ -203,7 +182,7 @@ export class EstimatesService {
   async sendViaWhatsApp(
     id: number,
     tenantId: string,
-  ): Promise<{ whatsappLink?: string; message: string; pdfUrl?: string; queued?: boolean }> {
+  ): Promise<{ whatsappLink: string; message: string; pdfUrl: string }> {
     const estimate = await this.prisma.estimate.findFirst({
       where: { id, tenantId },
       include: { client: true, items: true, tenant: true },
@@ -215,6 +194,7 @@ export class EstimatesService {
       throw new BadRequestException('Cliente não possui telefone cadastrado');
     }
 
+    // Se já tiver PDF, usa o link existente
     if (estimate.pdfUrl && estimate.pdfStatus === 'generated') {
       const pdfUrl = estimate.pdfUrl;
       const message = this.buildWhatsAppMessage(estimate, pdfUrl);
@@ -222,58 +202,25 @@ export class EstimatesService {
       return { whatsappLink, message, pdfUrl };
     }
 
+    // Gera PDF síncrono
     const tenant = estimate.tenant;
-    const estimateData = {
-      ...estimate,
-      items: estimate.items,
-      client: estimate.client,
-    };
+    this.logger.log(`Gerando PDF síncrono para orçamento ${id}`);
+    const pdfBuffer = await this.estimatesPdfService.generateEstimatePdf(estimate, tenant);
+    const key = `${tenantId}/estimates/${id}.pdf`;
+    const url = await this.storageService.upload(pdfBuffer, key);
 
-    // Fallback: se Redis não estiver disponível, gera PDF síncrono
-    if (!this.redisAvailable) {
-      this.logger.warn(`Gerando PDF síncrono para orçamento ${id} (Redis indisponível)`);
-      try {
-        const pdfBuffer = await this.estimatesPdfService.generateEstimatePdf(estimate, tenant);
-        const key = `${tenantId}/estimates/${id}.pdf`;
-        const url = await this.storageService.upload(pdfBuffer, key);
-
-        await this.prisma.estimate.update({
-          where: { id, tenantId },
-          data: {
-            pdfUrl: url,
-            pdfStatus: 'generated',
-            pdfGeneratedAt: new Date(),
-          },
-        });
-
-        const message = this.buildWhatsAppMessage(estimate, url);
-        const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
-        return { whatsappLink, message, pdfUrl: url };
-      } catch (error) {
-        this.logger.error(`Falha ao gerar PDF síncrono para orçamento ${id}`, error);
-        throw new BadRequestException('Erro ao gerar PDF. Tente novamente mais tarde.');
-      }
-    }
-
-    // Modo normal com fila
-    await this.pdfQueue.add('generate-estimate-pdf', {
-      tenantId,
-      estimateId: id,
-      tenantData: tenant,
-      estimateData,
+    await this.prisma.estimate.update({
+      where: { id, tenantId },
+      data: {
+        pdfUrl: url,
+        pdfStatus: 'generated',
+        pdfGeneratedAt: new Date(),
+      },
     });
 
-    if (!estimate.pdfStatus || estimate.pdfStatus === 'failed') {
-      await this.prisma.estimate.update({
-        where: { id, tenantId },
-        data: { pdfStatus: 'pending' },
-      });
-    }
-
-    return {
-      message: 'PDF em processamento. O link será enviado em breve.',
-      queued: true,
-    };
+    const message = this.buildWhatsAppMessage(estimate, url);
+    const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
+    return { whatsappLink, message, pdfUrl: url };
   }
 
   private buildWhatsAppMessage(estimate: any, pdfUrl: string): string {

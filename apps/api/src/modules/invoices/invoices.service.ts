@@ -10,15 +10,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { ConfigService } from '@nestjs/config';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { StorageService } from '../storage/storage.service';
 import { InvoicesPdfService } from './invoices-pdf.service';
 
 @Injectable()
 export class InvoicesService {
   private readonly logger = new Logger(InvoicesService.name);
-  private redisAvailable = true;
 
   constructor(
     private prisma: PrismaService,
@@ -26,26 +23,7 @@ export class InvoicesService {
     private configService: ConfigService,
     private storageService: StorageService,
     private invoicesPdfService: InvoicesPdfService,
-    @InjectQueue('pdf-invoice') private pdfQueue: Queue,
-  ) {
-    this.checkRedisConnection();
-  }
-
-  private async checkRedisConnection() {
-    try {
-      const client = this.pdfQueue?.client;
-      if (client) {
-        await client.ping();
-        this.logger.log('Redis disponível');
-        this.redisAvailable = true;
-      } else {
-        this.redisAvailable = false;
-      }
-    } catch (error) {
-      this.logger.error('Redis indisponível, usando fallback síncrono', error.message);
-      this.redisAvailable = false;
-    }
-  }
+  ) {}
 
   async create(tenantId: string, data: any) {
     if (!data.items || data.items.length === 0) {
@@ -245,7 +223,7 @@ export class InvoicesService {
   async sendViaWhatsApp(
     id: number,
     tenantId: string,
-  ): Promise<{ whatsappLink?: string; message: string; pdfUrl?: string; queued?: boolean }> {
+  ): Promise<{ whatsappLink: string; message: string; pdfUrl: string }> {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, tenantId },
       include: { client: true, items: true, tenant: true },
@@ -257,6 +235,7 @@ export class InvoicesService {
       throw new BadRequestException('Cliente sem telefone');
     }
 
+    // Se já tiver PDF, usa o link existente
     if (invoice.pdfUrl && invoice.pdfStatus === 'generated') {
       const pdfUrl = invoice.pdfUrl;
       const message = this.buildWhatsAppMessage(invoice, pdfUrl);
@@ -264,58 +243,25 @@ export class InvoicesService {
       return { whatsappLink, message, pdfUrl };
     }
 
+    // Gera PDF síncrono
     const tenant = invoice.tenant;
-    const invoiceData = {
-      ...invoice,
-      items: invoice.items,
-      client: invoice.client,
-    };
+    this.logger.log(`Gerando PDF síncrono para fatura ${id}`);
+    const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, tenant);
+    const key = `${tenantId}/invoices/${id}.pdf`;
+    const url = await this.storageService.upload(pdfBuffer, key);
 
-    // Fallback: se Redis não estiver disponível, gera PDF síncrono
-    if (!this.redisAvailable) {
-      this.logger.warn(`Gerando PDF síncrono para fatura ${id} (Redis indisponível)`);
-      try {
-        const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, tenant);
-        const key = `${tenantId}/invoices/${id}.pdf`;
-        const url = await this.storageService.upload(pdfBuffer, key);
-
-        await this.prisma.invoice.update({
-          where: { id, tenantId },
-          data: {
-            pdfUrl: url,
-            pdfStatus: 'generated',
-            pdfGeneratedAt: new Date(),
-          },
-        });
-
-        const message = this.buildWhatsAppMessage(invoice, url);
-        const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
-        return { whatsappLink, message, pdfUrl: url };
-      } catch (error) {
-        this.logger.error(`Falha ao gerar PDF síncrono para fatura ${id}`, error);
-        throw new BadRequestException('Erro ao gerar PDF. Tente novamente mais tarde.');
-      }
-    }
-
-    // Modo normal com fila
-    await this.pdfQueue.add('generate-invoice-pdf', {
-      tenantId,
-      invoiceId: id,
-      tenantData: tenant,
-      invoiceData,
+    await this.prisma.invoice.update({
+      where: { id, tenantId },
+      data: {
+        pdfUrl: url,
+        pdfStatus: 'generated',
+        pdfGeneratedAt: new Date(),
+      },
     });
 
-    if (!invoice.pdfStatus || invoice.pdfStatus === 'failed') {
-      await this.prisma.invoice.update({
-        where: { id, tenantId },
-        data: { pdfStatus: 'pending' },
-      });
-    }
-
-    return {
-      message: 'PDF em processamento. O link será enviado em breve.',
-      queued: true,
-    };
+    const message = this.buildWhatsAppMessage(invoice, url);
+    const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
+    return { whatsappLink, message, pdfUrl: url };
   }
 
   private buildWhatsAppMessage(invoice: any, pdfUrl: string): string {
