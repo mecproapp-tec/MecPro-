@@ -45,26 +45,21 @@ export class InvoicesController {
     return this.invoicesService.remove(Number(id), req.user.tenantId);
   }
 
-  @Post(':id/share')
-  async generateShareLink(@Param('id') id: string, @Req() req) {
-    const token = await this.invoicesService.generateShareToken(Number(id), req.user.tenantId);
-    const baseUrl = process.env.APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
-    const url = `${baseUrl}/api/public/invoices/share/${token}`;
-    return { url };
-  }
+ @Post(':id/share')
+async generateShareLink(@Param('id') id: string, @Req() req) {
+  const token = await this.invoicesService.generateShareToken(
+    Number(id),
+    req.user.tenantId
+  );
 
-  @Post(':id/send-whatsapp')
-  async sendViaWhatsApp(
-    @Param('id') id: string,
-    @Body() body: { workshopData?: any },
-    @Req() req,
-  ) {
-    return this.invoicesService.sendViaWhatsApp(
-      Number(id),
-      req.user.tenantId,
-      body.workshopData,
-    );
-  }
+  const baseUrl =
+    process.env.APP_URL?.replace(/\/$/, '') || 'http://localhost:5173';
+
+  return {
+    url: `${baseUrl}/invoice/${token}`,
+    token,
+  };
+}
 }
 
 @Controller('public/invoices')

@@ -1,3 +1,13 @@
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+
+
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
@@ -6,7 +16,16 @@ export class AppointmentsService {
   constructor(private prisma: PrismaService) {}
 
   async create(tenantId: string, data: { clientId: number; date: string; comment?: string }) {
-    const appointmentDate = new Date(data.date);
+    const appointmentDate = dayjs
+  .tz(data.date, 'America/Sao_Paulo')
+  .utc()
+  .toDate();
+
+if (!dayjs(data.date).isValid()) {
+  throw new Error('Data inválida');
+}
+
+
 
     return this.prisma.appointment.create({
       data: {

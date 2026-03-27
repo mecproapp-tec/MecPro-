@@ -1,53 +1,64 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FiSave, FiArrowLeft } from "react-icons/fi";
-import { getAppointmentById, updateAppointment } from "../../../services/appointments";
+import {
+  getAppointmentById,
+  updateAppointment,
+  type Appointment,
+} from "../../../services/appointments";
 
-const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+const BRAZIL_TIMEZONE = "America/Sao_Paulo";
 
-// Formata a data/hora recebida do backend (já convertida para o fuso Brasil) para os campos <input>
+// Formata data para inputs (date + time)
 const formatBrazilDateTimeForInput = (date: Date) => {
-  const formatter = new Intl.DateTimeFormat('pt-BR', {
+  const formatter = new Intl.DateTimeFormat("pt-BR", {
     timeZone: BRAZIL_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
     hour12: false,
   });
+
   const parts = formatter.formatToParts(date);
-  const year = parts.find(p => p.type === 'year')?.value;
-  const month = parts.find(p => p.type === 'month')?.value;
-  const day = parts.find(p => p.type === 'day')?.value;
-  const hour = parts.find(p => p.type === 'hour')?.value;
-  const minute = parts.find(p => p.type === 'minute')?.value;
+
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  const hour = parts.find((p) => p.type === "hour")?.value;
+  const minute = parts.find((p) => p.type === "minute")?.value;
+
   return {
     date: `${year}-${month}-${day}`,
     time: `${hour}:${minute}`,
   };
 };
 
-// Retorna a data/hora atual no horário de Brasília
+// Hora atual no Brasil
 const getBrazilNow = (): Date => {
   const now = new Date();
-  const formatter = new Intl.DateTimeFormat('pt-BR', {
+
+  const formatter = new Intl.DateTimeFormat("pt-BR", {
     timeZone: BRAZIL_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
     hour12: false,
   });
+
   const parts = formatter.formatToParts(now);
-  const year = parts.find(p => p.type === 'year')?.value;
-  const month = parts.find(p => p.type === 'month')?.value;
-  const day = parts.find(p => p.type === 'day')?.value;
-  const hour = parts.find(p => p.type === 'hour')?.value;
-  const minute = parts.find(p => p.type === 'minute')?.value;
-  const second = parts.find(p => p.type === 'second')?.value;
+
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  const hour = parts.find((p) => p.type === "hour")?.value;
+  const minute = parts.find((p) => p.type === "minute")?.value;
+  const second = parts.find((p) => p.type === "second")?.value;
+
   return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
 };
 
@@ -55,7 +66,7 @@ export default function EditarAgendamento() {
   const navigate = useNavigate();
   const { id } = useParams();
 
-  const [agendamento, setAgendamento] = useState<any>(null);
+  const [agendamento, setAgendamento] = useState<Appointment | null>(null);
   const [data, setData] = useState("");
   const [hora, setHora] = useState("");
   const [comentarios, setComentarios] = useState("");
@@ -73,12 +84,11 @@ export default function EditarAgendamento() {
       const app = await getAppointmentById(Number(id));
       setAgendamento(app);
 
-      // A data vinda do backend já está no fuso Brasil (convertida pelo service)
       const dateObj = new Date(app.date);
-      const { date: dataStr, time: horaStr } = formatBrazilDateTimeForInput(dateObj);
+      const { date, time } = formatBrazilDateTimeForInput(dateObj);
 
-      setData(dataStr);
-      setHora(horaStr);
+      setData(date);
+      setHora(time);
       setComentarios(app.comment || "");
     } catch (err: any) {
       setError(err.response?.data?.message || "Erro ao carregar agendamento");
@@ -88,8 +98,8 @@ export default function EditarAgendamento() {
   };
 
   const handleSalvar = async () => {
-    if (saving) return;
-    if (!agendamento) return;
+    if (saving || !agendamento) return;
+
     if (!data || !hora) {
       alert("Preencha data e hora");
       return;
@@ -104,8 +114,14 @@ export default function EditarAgendamento() {
     }
 
     setSaving(true);
+
     try {
-      const dateTime = `${data}T${hora}:00`;
+      // 🔥 CORREÇÃO IMPORTANTE (timezone)
+      const localDate = new Date(`${data}T${hora}:00`);
+
+      const dateTime = new Date(
+        localDate.getTime() - localDate.getTimezoneOffset() * 60000
+      ).toISOString();
 
       await updateAppointment(agendamento.id, {
         clientId: agendamento.clientId,
@@ -114,7 +130,12 @@ export default function EditarAgendamento() {
       });
 
       alert("Agendamento atualizado com sucesso");
-      navigate("/agenda");
+
+      // ✅ CORREÇÃO DE NAVEGAÇÃO
+      navigate("/agendamento/ver/" + agendamento.id);
+      // ou:
+      // navigate("/agenda");
+
     } catch (err: any) {
       alert(err.response?.data?.message || "Erro ao atualizar agendamento");
     } finally {
@@ -123,7 +144,11 @@ export default function EditarAgendamento() {
   };
 
   if (loading) {
-    return <div style={styles.loadingContainer}>Carregando agendamento...</div>;
+    return (
+      <div style={styles.loadingContainer}>
+        Carregando agendamento...
+      </div>
+    );
   }
 
   if (error || !agendamento) {
@@ -144,11 +169,14 @@ export default function EditarAgendamento() {
           <button onClick={() => navigate(-1)} style={styles.backIcon}>
             <FiArrowLeft size={32} />
           </button>
+
           <h1 style={styles.title}>Editar Agendamento</h1>
         </div>
 
         <div style={styles.card}>
-          <h2 style={styles.subtitle}>Cliente: {agendamento.client?.name || "—"}</h2>
+          <h2 style={styles.subtitle}>
+            Cliente: {agendamento.client?.name || "—"}
+          </h2>
 
           <div style={styles.form}>
             <label style={styles.label}>

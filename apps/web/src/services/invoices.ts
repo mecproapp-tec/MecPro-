@@ -77,3 +77,27 @@ export function calculateTotalWithIss(items: InvoiceItem[]): number {
     return acc + itemTotal + iss;
   }, 0);
 }
+
+
+// 📲 Enviar fatura via WhatsApp
+export const sendInvoiceWhatsApp = async (id: number): Promise<{
+  whatsappLink?: string;
+  message: string;
+  pdfUrl?: string;
+  queued?: boolean;
+}> => {
+  const response = await api.post(`/invoices/${id}/send-whatsapp`);
+  return response.data;
+};
+
+// 🔗 Gerar token de compartilhamento
+export const generateShareToken = async (id: number): Promise<{ token: string }> => {
+  const response = await api.post(`/invoices/${id}/share`);
+  return response.data;
+};
+
+// 🌐 Obter fatura pública via token (sem login)
+export const getInvoiceByToken = async (token: string): Promise<Invoice> => {
+  const response = await api.get(`/invoices/share/${token}`);
+  return response.data;
+};

@@ -76,7 +76,10 @@ export default function Agendamento() {
 
     setSaving(true);
     try {
-      const dateTime = `${data}T${hora}:00`;
+      const localDate = new Date(`${data}T${hora}:00`);
+const dateTime = new Date(
+  localDate.getTime() - localDate.getTimezoneOffset() * 60000
+).toISOString();
 
       await createAppointment({
         clientId: cliente.id,
