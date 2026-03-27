@@ -2,15 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
 import * as Handlebars from 'handlebars';
-import puppeteer from 'puppeteer';
+import { BrowserPoolService } from '../../shared/browser-pool.service';
 
 @Injectable()
 export class EstimatesPdfService {
   private readonly logger = new Logger(EstimatesPdfService.name);
 
-  async generateEstimatePdf(estimate: any, tenant: any): Promise<Buffer> {
-    this.logger.log(`Gerando PDF para orçamento ${estimate.id}, tenant: ${tenant?.id}`);
+  constructor(private readonly browserPool: BrowserPoolService) {}
 
+  async generateEstimatePdf(estimate: any, tenant: any): Promise<Buffer> {
     const items = estimate.items.map(item => ({
       description: item.description,
       quantity: item.quantity,
@@ -59,7 +59,7 @@ export class EstimatesPdfService {
         address: client.address || 'Não informado',
         phone: client.phone,
         vehicle: vehicleDetails,
-        plate: plate,
+        plate,
       },
       issueDate,
       validUntil,
@@ -74,25 +74,17 @@ export class EstimatesPdfService {
       companyEmail,
     });
 
-    const browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-    });
+    const browser = await this.browserPool.getBrowser();
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
 
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
-      margin: {
-        top: '20px',
-        bottom: '20px',
-        left: '20px',
-        right: '20px',
-      },
+      margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' },
     });
 
-    await browser.close();
+    await page.close();
     return Buffer.from(pdfBuffer);
   }
 }

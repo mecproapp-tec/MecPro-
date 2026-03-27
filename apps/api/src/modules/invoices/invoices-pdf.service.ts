@@ -2,15 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
 import * as Handlebars from 'handlebars';
-import puppeteer from 'puppeteer';
+import { BrowserPoolService } from '../../shared/browser-pool.service';
 
 @Injectable()
 export class InvoicesPdfService {
   private readonly logger = new Logger(InvoicesPdfService.name);
 
-  async generateInvoicePdf(invoice: any, tenant: any): Promise<Buffer> {
-    this.logger.log(`Gerando PDF da fatura ${invoice.id}, tenant: ${tenant?.id}`);
+  constructor(private readonly browserPool: BrowserPoolService) {}
 
+  async generateInvoicePdf(invoice: any, tenant: any): Promise<Buffer> {
     const client = invoice.client;
 
     const vehicleDetails =
@@ -54,7 +54,7 @@ export class InvoicesPdfService {
         address: client.address || '',
         phone: client.phone,
         vehicle: vehicleDetails,
-        plate: plate,
+        plate,
       },
       issueDate: new Date(invoice.createdAt).toLocaleDateString('pt-BR'),
       dueDate: '',
@@ -73,28 +73,18 @@ export class InvoicesPdfService {
 
     const html = template(data);
 
-    const browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-    });
+    const browser = await this.browserPool.getBrowser();
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
 
-    const pdfUint8 = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-    });
+    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
 
-    await browser.close();
-    return Buffer.from(pdfUint8);
+    await page.close();
+    return Buffer.from(pdfBuffer);
   }
 
   private getStatusText(status: string): string {
-    const map = {
-      PAID: 'Paga',
-      PENDING: 'Pendente',
-      CANCELED: 'Cancelada',
-    };
+    const map = { PAID: 'Paga', PENDING: 'Pendente', CANCELED: 'Cancelada' };
     return map[status] || 'Desconhecido';
   }
 }
