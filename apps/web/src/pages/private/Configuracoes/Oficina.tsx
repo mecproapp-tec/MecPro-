@@ -269,7 +269,7 @@ export default function OficinaConfig() {
             {/* Número (endereço) */}
             <div>
               <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                Número (endereço)
+                Endereço (rua e numero)
               </label>
               <input
                 type="text"
@@ -291,7 +291,7 @@ export default function OficinaConfig() {
             {/* Endereço */}
             <div>
               <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                Endereço (rua, bairro, cidade)
+                 Bairro (Cidade)
               </label>
               <input
                 type="text"
