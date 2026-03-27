@@ -1,102 +1,424 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { readFile } from 'fs/promises';
-import * as path from 'path';
-import * as Handlebars from 'handlebars';
-import { BrowserPoolService } from '../../shared/browser-pool.service';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  UnauthorizedException,
+  Logger,
+} from '@nestjs/common';
+import { PrismaService } from '../../shared/prisma/prisma.service';
+import { v4 as uuidv4 } from 'uuid';
+import { randomBytes } from 'crypto';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { ConfigService } from '@nestjs/config';
+import { StorageService } from '../storage/storage.service';
+import { InvoicesPdfService } from './invoices-pdf.service';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 
 @Injectable()
-export class InvoicesPdfService {
-  private readonly logger = new Logger(InvoicesPdfService.name);
+export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
 
-  constructor(private readonly browserPool: BrowserPoolService) {}
+  constructor(
+    private prisma: PrismaService,
+    private whatsappService: WhatsappService,
+    private configService: ConfigService,
+    private storageService: StorageService,
+    private invoicesPdfService: InvoicesPdfService,
+    @InjectQueue('pdf') private pdfQueue: Queue,
+  ) {}
 
-  async generateInvoicePdf(invoice: any, tenant: any): Promise<Buffer> {
-    this.logger.log(`Gerando PDF da fatura ${invoice.id}`);
+  async create(tenantId: string, data: any) {
+    if (!data.items || data.items.length === 0) {
+      throw new BadRequestException('A fatura deve ter pelo menos um item.');
+    }
 
-    const client = invoice.client;
+    const client = await this.prisma.client.findFirst({
+      where: { id: data.clientId, tenantId },
+    });
 
-    const vehicleDetails =
-      client?.vehicleBrand && client?.vehicleModel
-        ? `${client.vehicleBrand} ${client.vehicleModel}${
-            client.vehicleYear ? ` ${client.vehicleYear}` : ''
-          }${client.vehicleColor ? ` - ${client.vehicleColor}` : ''}`.trim()
-        : client?.vehicle || 'Não informado';
+    if (!client) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
 
-    const plate = client?.plate || 'Não informado';
-
-    let subtotal = 0;
-    let issTotal = 0;
-
-    const itemsWithTotal = invoice.items.map((item) => {
-      const itemTotal = item.price * item.quantity;
-      const iss = item.issPercent ? itemTotal * (item.issPercent / 100) : 0;
-      subtotal += itemTotal;
-      issTotal += iss;
+    const itemsWithTotal = data.items.map((item) => {
+      const iss = item.issPercent ? item.price * (item.issPercent / 100) : 0;
+      const total = (item.price + iss) * item.quantity;
       return {
         description: item.description,
         quantity: item.quantity,
-        unitPrice: item.price.toFixed(2),
-        total: (itemTotal + iss).toFixed(2),
+        price: item.price,
+        issPercent: item.issPercent,
+        total,
       };
     });
 
-    const total = subtotal + issTotal;
+    const total = itemsWithTotal.reduce((acc, item) => acc + item.total, 0);
+    const invoiceNumber = `INV-${uuidv4().slice(0, 8).toUpperCase()}`;
 
-    const templatePath = path.join(__dirname, 'invoice-pdf.hbs');
-    let templateContent: string;
-    try {
-      templateContent = await readFile(templatePath, 'utf-8');
-    } catch (err) {
-      this.logger.error(`Template não encontrado em ${templatePath}`);
-      throw new Error(`Template não encontrado: ${templatePath}`);
+    return this.prisma.invoice.create({
+      data: {
+        tenantId,
+        clientId: data.clientId,
+        number: invoiceNumber,
+        total,
+        status: data.status || 'PENDING',
+        items: { create: itemsWithTotal },
+      },
+      include: { items: true, client: true },
+    });
+  }
+
+  async findAll(tenantId: string) {
+    return this.prisma.invoice.findMany({
+      where: { tenantId },
+      select: {
+        id: true,
+        clientId: true,
+        number: true,
+        total: true,
+        status: true,
+        pdfUrl: true,
+        pdfStatus: true,
+        createdAt: true,
+        client: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            vehicle: true,
+            plate: true,
+            address: true,
+            document: true,
+          },
+        },
+        items: {
+          select: {
+            id: true,
+            description: true,
+            quantity: true,
+            price: true,
+            total: true,
+            issPercent: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findOne(id: number, tenantId: string) {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        clientId: true,
+        number: true,
+        total: true,
+        status: true,
+        pdfUrl: true,
+        pdfStatus: true,
+        pdfGeneratedAt: true,
+        createdAt: true,
+        shareToken: true,
+        shareTokenExpires: true,
+        client: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            vehicle: true,
+            plate: true,
+            address: true,
+            document: true,
+          },
+        },
+        items: {
+          select: {
+            id: true,
+            description: true,
+            quantity: true,
+            price: true,
+            total: true,
+            issPercent: true,
+          },
+        },
+      },
+    });
+    if (!invoice) throw new NotFoundException('Fatura não encontrada');
+    return invoice;
+  }
+
+  async update(id: number, tenantId: string, updateData: any) {
+    await this.findOne(id, tenantId);
+
+    if (updateData.clientId) {
+      const client = await this.prisma.client.findFirst({
+        where: { id: updateData.clientId, tenantId },
+      });
+      if (!client) throw new NotFoundException('Cliente não encontrado');
     }
-    const compiledTemplate = Handlebars.compile(templateContent);
 
-    const data = {
+    if (updateData.items && updateData.items.length > 0) {
+      await this.prisma.invoiceItem.deleteMany({ where: { invoiceId: id } });
+
+      const itemsWithTotal = updateData.items.map((item) => {
+        const iss = item.issPercent ? item.price * (item.issPercent / 100) : 0;
+        const total = (item.price + iss) * item.quantity;
+        return {
+          description: item.description,
+          quantity: item.quantity,
+          price: item.price,
+          issPercent: item.issPercent,
+          total,
+        };
+      });
+
+      const total = itemsWithTotal.reduce((acc, item) => acc + item.total, 0);
+
+      const dataToUpdate: any = {
+        clientId: updateData.clientId,
+        total,
+        items: { create: itemsWithTotal },
+      };
+      if (updateData.status) dataToUpdate.status = updateData.status;
+
+      return this.prisma.invoice.update({
+        where: { id },
+        data: dataToUpdate,
+        include: { items: true, client: true },
+      });
+    }
+
+    const dataToUpdate: any = {};
+    if (updateData.clientId) dataToUpdate.clientId = updateData.clientId;
+    if (updateData.status) dataToUpdate.status = updateData.status;
+
+    return this.prisma.invoice.update({
+      where: { id },
+      data: dataToUpdate,
+      include: { items: true, client: true },
+    });
+  }
+
+  async remove(id: number, tenantId: string) {
+    await this.findOne(id, tenantId);
+    await this.prisma.invoiceItem.deleteMany({ where: { invoiceId: id } });
+    await this.prisma.invoice.delete({ where: { id } });
+    return { message: 'Fatura removida com sucesso' };
+  }
+
+  async generateShareToken(id: number, tenantId: string): Promise<string> {
+    const invoice = await this.findOne(id, tenantId);
+
+    if (
+      invoice.shareToken &&
+      invoice.shareTokenExpires &&
+      new Date() < invoice.shareTokenExpires
+    ) {
+      return invoice.shareToken;
+    }
+
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await this.prisma.invoice.update({
+      where: { id },
+      data: {
+        shareToken: token,
+        shareTokenExpires: expiresAt,
+      },
+    });
+
+    return token;
+  }
+
+  async validateShareToken(token: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { shareToken: token },
+      select: {
+        id: true,
+        tenantId: true,
+        number: true,
+        total: true,
+        status: true,
+        pdfUrl: true,
+        pdfStatus: true,
+        shareTokenExpires: true,
+        createdAt: true,
+        client: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            vehicle: true,
+            plate: true,
+            address: true,
+            document: true,
+          },
+        },
+        items: {
+          select: {
+            description: true,
+            quantity: true,
+            price: true,
+            total: true,
+            issPercent: true,
+          },
+        },
+      },
+    });
+    if (!invoice) {
+      throw new UnauthorizedException('Token inválido');
+    }
+    if (invoice.shareTokenExpires && new Date() > invoice.shareTokenExpires) {
+      throw new UnauthorizedException('Token expirado');
+    }
+    return invoice;
+  }
+
+  async getPdfByShareToken(token: string): Promise<Buffer> {
+    const invoice = await this.validateShareToken(token);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: invoice.tenantId },
+      select: {
+        name: true,
+        documentNumber: true,
+        phone: true,
+        email: true,
+        logoUrl: true,
+      },
+    });
+
+    if (invoice.pdfUrl && invoice.pdfStatus === 'generated') {
+      try {
+        const response = await fetch(invoice.pdfUrl);
+        if (!response.ok) throw new Error('Erro ao buscar PDF do storage');
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+      } catch (error) {
+        this.logger.error(`Erro ao buscar PDF do storage para fatura ${invoice.id}`, error);
+      }
+    }
+
+    const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, tenant);
+    const key = `${invoice.tenantId}/invoices/${invoice.id}.pdf`;
+    const url = await this.storageService.upload(pdfBuffer, key);
+
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        pdfUrl: url,
+        pdfStatus: 'generated',
+        pdfGeneratedAt: new Date(),
+      },
+    });
+
+    return pdfBuffer;
+  }
+
+  async sendViaWhatsApp(
+    id: number,
+    tenantId: string,
+    workshopData?: any,
+  ): Promise<{ whatsappLink?: string; message: string; pdfUrl?: string; queued?: boolean }> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, tenantId },
+      include: { client: true, items: true, tenant: true },
+    });
+    if (!invoice) throw new NotFoundException('Fatura não encontrada');
+    const client = invoice.client;
+
+    if (!client.phone) {
+      throw new BadRequestException('Cliente sem telefone');
+    }
+
+    if (invoice.pdfUrl && invoice.pdfStatus === 'generated') {
+      const pdfUrl = invoice.pdfUrl;
+      const message = this.buildWhatsAppMessage(invoice, pdfUrl);
+      const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
+      return { whatsappLink, message, pdfUrl };
+    }
+
+    const tenant = invoice.tenant;
+    const effectiveTenant = workshopData
+      ? {
+          ...tenant,
+          name: workshopData.name || tenant.name,
+          documentNumber: workshopData.documentNumber || tenant.documentNumber,
+          phone: workshopData.phone || tenant.phone,
+          email: workshopData.email || tenant.email,
+          logoUrl: workshopData.logoUrl || tenant.logoUrl,
+        }
+      : tenant;
+
+    const invoiceData = {
+      logoUrl: effectiveTenant.logoUrl,
       invoiceNumber: invoice.number,
       client: {
         name: client.name,
         document: client.document || 'Não informado',
         address: client.address || '',
         phone: client.phone,
-        vehicle: vehicleDetails,
-        plate,
+        vehicle: client.vehicle,
+        plate: client.plate,
       },
       issueDate: new Date(invoice.createdAt).toLocaleDateString('pt-BR'),
       dueDate: '',
       status: this.getStatusText(invoice.status),
-      items: itemsWithTotal,
-      subtotal: subtotal.toFixed(2),
-      issValue: issTotal.toFixed(2),
-      total: total.toFixed(2),
-      companyName: tenant?.name || process.env.COMPANY_NAME || 'Oficina',
-      companyDocument: tenant?.documentNumber || process.env.COMPANY_DOCUMENT || '',
-      companyPhone: tenant?.phone || process.env.COMPANY_PHONE || '',
-      companyEmail: tenant?.email || process.env.COMPANY_EMAIL || '',
-      logoUrl: tenant?.logoUrl || process.env.LOGO_URL || '',
+      items: invoice.items.map(item => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.price.toFixed(2),
+        total: (item.price * item.quantity + (item.issPercent ? item.price * item.quantity * (item.issPercent / 100) : 0)).toFixed(2),
+      })),
+      subtotal: invoice.items.reduce((acc, item) => acc + (item.price * item.quantity), 0).toFixed(2),
+      issRate: 0,
+      issValue: invoice.items.reduce((acc, item) => {
+        const iss = item.issPercent ? item.price * item.quantity * (item.issPercent / 100) : 0;
+        return acc + iss;
+      }, 0).toFixed(2),
+      total: invoice.total.toFixed(2),
+      companyName: effectiveTenant.name || 'Oficina',
+      companyDocument: effectiveTenant.documentNumber || '',
+      companyPhone: effectiveTenant.phone || '',
+      companyEmail: effectiveTenant.email || '',
     };
 
-    const html = compiledTemplate(data);
-    this.logger.debug(`HTML gerado, tamanho: ${html.length}`);
-
-    const browser = await this.browserPool.getBrowser();
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' },
+    await this.pdfQueue.add('generate', {
+      tenantId,
+      entityId: id,
+      entityType: 'invoice',
+      data: invoiceData,
     });
 
-    await page.close();
+    await this.prisma.invoice.update({
+      where: { id, tenantId },
+      data: { pdfStatus: 'pending' },
+    });
 
-    this.logger.log(`PDF gerado com sucesso, tamanho: ${pdfBuffer.length} bytes`);
-    return Buffer.from(pdfBuffer);
+    return {
+      message: 'PDF em processamento. O link será enviado em breve.',
+      queued: true,
+    };
+  }
+
+  private buildWhatsAppMessage(invoice: any, pdfUrl: string): string {
+    const client = invoice.client;
+    return `Olá ${client.name}!
+
+Sua fatura ${invoice.number} está pronta ✅
+
+🔗 Acesse aqui:
+${pdfUrl}
+
+💰 Total: R$ ${invoice.total.toFixed(2)}
+📌 Status: ${this.getStatusText(invoice.status)}`;
   }
 
   private getStatusText(status: string): string {
-    const map: Record<string, string> = {
+    const map = {
       PAID: 'Paga',
       PENDING: 'Pendente',
       CANCELED: 'Cancelada',
