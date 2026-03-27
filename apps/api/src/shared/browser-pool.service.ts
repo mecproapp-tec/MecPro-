@@ -9,10 +9,17 @@ export class BrowserPoolService implements OnApplicationShutdown {
   async getBrowser(): Promise<puppeteer.Browser> {
     if (!this.browser) {
       this.logger.log('Iniciando navegador Puppeteer...');
-      this.browser = await puppeteer.launch({
+      const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      const launchOptions: puppeteer.LaunchOptions = {
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-      });
+      };
+      if (executablePath) {
+        launchOptions.executablePath = executablePath;
+        this.logger.log(`Usando Chromium customizado em: ${executablePath}`);
+      } else {
+        this.logger.log('Usando Chromium padrão do Puppeteer');
+      }
+      this.browser = await puppeteer.launch(launchOptions);
     }
     return this.browser;
   }
