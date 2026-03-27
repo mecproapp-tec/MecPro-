@@ -4,6 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bullmq';
 
 import { PrismaModule } from './shared/prisma/prisma.module';
+import { SharedModule } from './shared/shared.module'; // <-- import
 import { AuthModule } from './auth/auth.module';
 import { PaymentModule } from './payments/payment.module';
 import { WebhookModule } from './webhook/webhook.module';
@@ -22,7 +23,6 @@ import { QueueModule } from './modules/common/queues/queue.module';
 import { PdfModule } from './modules/pdf/pdf.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { PdfProcessor } from './modules/common/queues/pdf-processor.service';
-import { BrowserPoolService } from './shared/browser-pool.service'; // <-- import
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -36,6 +36,7 @@ import { AppService } from './app.service';
     }),
     BullModule.registerQueue({ name: 'pdf' }),
     PrismaModule,
+    SharedModule, // <-- importado
     AuthModule,
     PaymentModule,
     WebhookModule,
@@ -54,6 +55,6 @@ import { AppService } from './app.service';
     StorageModule,
   ],
   controllers: [AppController],
-  providers: [AppService, PdfProcessor, BrowserPoolService], // <-- adicionado
+  providers: [AppService, PdfProcessor], // BrowserPoolService removido daqui, pois será fornecido pelo SharedModule
 })
 export class AppModule {}
