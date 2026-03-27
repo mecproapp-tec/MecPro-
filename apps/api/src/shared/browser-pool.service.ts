@@ -1,5 +1,5 @@
 import { Injectable, OnApplicationShutdown, Logger } from '@nestjs/common';
-import puppeteer from 'puppeteer';
+import * as puppeteer from 'puppeteer';
 
 @Injectable()
 export class BrowserPoolService implements OnApplicationShutdown {
