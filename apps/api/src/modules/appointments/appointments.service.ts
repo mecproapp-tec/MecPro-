@@ -20,16 +20,17 @@ export class AppointmentsService {
 
   /**
    * 🔥 Converte data recebida (frontend) para UTC (salvar no banco)
+   * A string é interpretada como horário local do Brasil.
    */
   private convertToUTC(dateString: string): Date {
     if (!dayjs(dateString).isValid()) {
       throw new BadRequestException('Data inválida');
     }
 
-    return dayjs(dateString)
-      .tz(BRAZIL_TZ)
-      .utc()
-      .toDate();
+    // Interpreta a string como se estivesse no fuso horário do Brasil
+    const brazilTime = dayjs.tz(dateString, BRAZIL_TZ);
+    // Converte para UTC (timestamp absoluto)
+    return brazilTime.utc().toDate();
   }
 
   /**
