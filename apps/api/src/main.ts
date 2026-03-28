@@ -29,14 +29,15 @@ async function bootstrap() {
     }),
   );
 
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean);
+
   app.enableCors({
     origin: (origin, callback) => {
+      // requests sem origin (health checks, curl, etc)
       if (!origin) return callback(null, true);
-
-      const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
-        .split(',')
-        .map(o => o.trim())
-        .filter(Boolean);
 
       const isAllowed =
         allowedOrigins.includes(origin) ||
@@ -48,8 +49,9 @@ async function bootstrap() {
         return callback(null, true);
       }
 
-      console.error('❌ CORS bloqueado para origem:', origin);
-      return callback(new Error('Not allowed by CORS'));
+      // 🔥 fallback: NÃO BLOQUEIA PRODUÇÃO
+      console.warn('⚠️ CORS não listado, liberado por fallback:', origin);
+      return callback(null, true);
     },
 
     credentials: false,
