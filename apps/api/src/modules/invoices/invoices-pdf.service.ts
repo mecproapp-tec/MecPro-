@@ -14,25 +14,28 @@ export class InvoicesPdfService {
     this.logger.log(`Gerando PDF da fatura ${invoice.id}`);
 
     try {
-      // 1. Extrair dados do cliente (exatamente como nos orçamentos)
+      // 1. Extrair dados do cliente (idêntico aos orçamentos)
       const client = invoice.client;
-      const vehicleDetails = client?.vehicleBrand && client?.vehicleModel
-        ? `${client.vehicleBrand} ${client.vehicleModel}${client.vehicleYear ? ` ${client.vehicleYear}` : ''}${client.vehicleColor ? ` - ${client.vehicleColor}` : ''}`.trim()
-        : client?.vehicle || 'Não informado';
+      const vehicleDetails =
+        client?.vehicleBrand && client?.vehicleModel
+          ? `${client.vehicleBrand} ${client.vehicleModel}${client.vehicleYear ? ` ${client.vehicleYear}` : ''}${client.vehicleColor ? ` - ${client.vehicleColor}` : ''}`.trim()
+          : client?.vehicle || 'Não informado';
       const plate = client?.plate || 'Não informado';
 
-      // 2. Processar itens
+      // 2. Processar itens e totais
       let subtotal = 0;
       let issTotal = 0;
       const items = invoice.items.map((item: any) => {
-        const itemTotal = item.price * item.quantity;
+        const quantity = item.quantity || 1;
+        const price = item.price || 0;
+        const itemTotal = price * quantity;
         const iss = item.issPercent ? itemTotal * (item.issPercent / 100) : 0;
         subtotal += itemTotal;
         issTotal += iss;
         return {
           description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.price.toFixed(2),
+          quantity,
+          unitPrice: price.toFixed(2),
           issPercent: item.issPercent || 0,
           total: (itemTotal + iss).toFixed(2),
         };
@@ -56,7 +59,7 @@ export class InvoicesPdfService {
       const companyEmail = tenant?.email || process.env.COMPANY_EMAIL || 'contato@oficina.com';
       const logoUrl = tenant?.logoUrl || process.env.LOGO_URL || '';
 
-      // 5. Carregar template (sem fallback inline)
+      // 5. Carregar template (sem fallback – se não existir, o erro será explícito)
       const templatePath = path.join(__dirname, 'invoice-pdf.hbs');
       const templateContent = await readFile(templatePath, 'utf-8');
       this.logger.log(`Template carregado de ${templatePath}`);
