@@ -35,14 +35,14 @@ async function bootstrap() {
     .map(o => o.trim())
     .filter(Boolean);
 
-  // Em produção, defina as origens explicitamente
-  // Exemplo: https://www.mecpro.tec.br,https://mecpro.tec.br
-  // Se ALLOWED_ORIGINS não estiver definido, usamos um array padrão
+  // Origens padrão (inclui admin e portas de desenvolvimento)
   const defaultOrigins = [
     'https://www.mecpro.tec.br',
     'https://mecpro.tec.br',
-    'http://localhost:5173', // desenvolvimento
-    'http://localhost:3001', // desenvolvimento admin
+    'https://admin.mecpro.tec.br',   // admin em produção
+    'http://localhost:5173',          // web em desenvolvimento
+    'http://localhost:5174',          // admin em desenvolvimento (NOVA PORTA)
+    'http://localhost:3001',          // admin alternativa
   ];
 
   const origins = allowedOrigins.length > 0 ? allowedOrigins : defaultOrigins;
@@ -54,12 +54,14 @@ async function bootstrap() {
 
       // Verifica se a origem está na lista de permitidas
       const isAllowed = origins.some(allowed => {
-        // Permite correspondência exata ou se a origem contém o domínio (ex: subdomínios)
-        // Para segurança, é melhor usar correspondência exata
-        return allowed === origin || origin.endsWith(`.${allowed.replace('https://', '')}`);
+        // Permite correspondência exata
+        if (allowed === origin) return true;
+        // Permite subdomínios (ex: admin.mecpro.tec.br)
+        if (origin.endsWith(`.${allowed.replace('https://', '')}`)) return true;
+        return false;
       });
 
-      // Também permite localhost para desenvolvimento
+      // Também permite localhost para desenvolvimento (qualquer porta)
       const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
 
       if (isAllowed || isLocalhost) {
