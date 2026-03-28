@@ -26,7 +26,6 @@ export interface Tenant {
   _count?: { clients: number; estimates: number; invoices: number };
 }
 
-// Novas interfaces para clientes, orçamentos e notificações do admin
 export interface Client {
   id: string;
   name: string;
@@ -114,8 +113,6 @@ export const scheduleNotification = async (data: { message: string; title: strin
   const response = await api.post('/admin/notifications/schedule', data);
   return response.data;
 };
-
-// ===== NOVAS FUNÇÕES PARA CLIENTES, ORÇAMENTOS E NOTIFICAÇÕES =====
 
 export const getAllClients = async (params?: { search?: string; tenantId?: string }): Promise<Client[]> => {
   const response = await api.get('/admin/clients', { params });

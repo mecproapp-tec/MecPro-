@@ -19,8 +19,8 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchData(); // primeira carga
-    const interval = setInterval(fetchData, 30000); // atualiza a cada 30 segundos
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, []);
 

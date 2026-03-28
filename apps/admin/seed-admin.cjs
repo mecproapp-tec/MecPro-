@@ -5,8 +5,9 @@ const prisma = new PrismaClient();
 
 async function main() {
   const adminEmail = 'admin@mecprotec.br';
-  const adminPassword = 'sua-senha-aqui'; // Defina a senha que você usará no login
+  const adminPassword = 'sua-senha-aqui'; // defina uma senha forte
 
+  // Verifica se já existe
   const existingAdmin = await prisma.user.findUnique({
     where: { email: adminEmail },
   });
@@ -17,7 +18,7 @@ async function main() {
       data: {
         email: adminEmail,
         password: hashedPassword,
-        role: 'ADMIN', // ou o campo correspondente no seu modelo
+        role: 'ADMIN', // pode ser 'admin' ou o valor que seu modelo usa
       },
     });
     console.log(`✅ Admin criado: ${adminEmail}`);
@@ -31,4 +32,6 @@ main()
     console.error('❌ Erro ao criar admin:', e);
     process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

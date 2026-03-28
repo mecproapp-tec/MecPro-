@@ -6,6 +6,7 @@ interface AdminUser {
   email: string;
   role: string;
   name?: string;
+  officeName?: string;
 }
 
 interface AuthContextType {
