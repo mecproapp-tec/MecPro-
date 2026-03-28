@@ -316,7 +316,6 @@ export class InvoicesService {
       });
       this.logger.log(`Tenant encontrado: ${tenant?.name || 'não encontrado'}`);
 
-      // Verifica se o cliente e itens existem
       if (!invoice.client || !invoice.client.id) {
         throw new BadRequestException('Fatura sem cliente associado');
       }
@@ -324,28 +323,27 @@ export class InvoicesService {
         throw new BadRequestException('Fatura sem itens');
       }
 
-      // Se já tiver PDF no storage, retorna direto
+      // Se já tiver PDF salvo localmente, retorna diretamente
       if (invoice.pdfUrl && invoice.pdfStatus === 'generated') {
         try {
-          const response = await fetch(invoice.pdfUrl);
-          if (response.ok) {
-            const arrayBuffer = await response.arrayBuffer();
-            this.logger.log(`PDF retornado do storage, tamanho: ${arrayBuffer.byteLength}`);
-            return Buffer.from(arrayBuffer);
-          }
+          const pdfBuffer = await this.storageService.get(invoice.pdfUrl);
+          this.logger.log(`PDF recuperado do storage local, tamanho: ${pdfBuffer.length}`);
+          return pdfBuffer;
         } catch (error) {
           this.logger.warn(`Erro ao buscar PDF do storage: ${error.message}. Gerando novo.`);
         }
       }
 
+      // Gera o PDF
       const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, tenant);
       const key = `${invoice.tenantId}/invoices/${invoice.id}.pdf`;
-      const url = await this.storageService.upload(pdfBuffer, key);
+      const savedKey = await this.storageService.upload(pdfBuffer, key);
 
+      // Salva a chave (caminho) no banco
       await this.prisma.invoice.update({
         where: { id: invoice.id },
         data: {
-          pdfUrl: url,
+          pdfUrl: savedKey,
           pdfStatus: 'generated',
           pdfGeneratedAt: new Date(),
         },

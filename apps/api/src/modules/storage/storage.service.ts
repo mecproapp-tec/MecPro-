@@ -1,36 +1,51 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
+import { writeFile, mkdir, access, readFile } from 'fs/promises';
+import { join } from 'path';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class StorageService {
-  private s3: S3Client;
-  private bucket: string;
+  private readonly logger = new Logger(StorageService.name);
+  private readonly basePath: string;
 
   constructor(private configService: ConfigService) {
-    this.s3 = new S3Client({
-      region: this.configService.get('AWS_REGION'),
-      credentials: {
-        accessKeyId: this.configService.get('AWS_ACCESS_KEY_ID'),
-        secretAccessKey: this.configService.get('AWS_SECRET_ACCESS_KEY'),
-      },
-    });
-    this.bucket = this.configService.get('S3_BUCKET');
+    this.basePath = this.configService.get('LOCAL_STORAGE_PATH') || '/app/uploads';
+    this.init().catch(err => this.logger.error('Falha ao criar diretório de uploads', err));
+  }
+
+  private async init() {
+    try {
+      await access(this.basePath);
+      this.logger.log(`Diretório de uploads já existe: ${this.basePath}`);
+    } catch {
+      await mkdir(this.basePath, { recursive: true });
+      this.logger.log(`Diretório de uploads criado: ${this.basePath}`);
+    }
   }
 
   async upload(buffer: Buffer, key: string): Promise<string> {
-    const command = new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: 'application/pdf',
-    });
-
     try {
-      await this.s3.send(command);
-      return `https://${this.bucket}.s3.${this.configService.get('AWS_REGION')}.amazonaws.com/${key}`;
+      const fullPath = join(this.basePath, key);
+      const dir = fullPath.substring(0, fullPath.lastIndexOf('/'));
+      await mkdir(dir, { recursive: true });
+      await writeFile(fullPath, buffer);
+      this.logger.log(`Arquivo salvo localmente: ${fullPath}`);
+      return key; // retorna a chave (caminho relativo) para referência
     } catch (error) {
-      throw new InternalServerErrorException('Falha ao enviar PDF para o storage');
+      this.logger.error(`Erro ao salvar arquivo localmente: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Falha ao salvar PDF');
+    }
+  }
+
+  async get(key: string): Promise<Buffer> {
+    try {
+      const fullPath = join(this.basePath, key);
+      const buffer = await readFile(fullPath);
+      this.logger.log(`Arquivo lido localmente: ${fullPath}`);
+      return buffer;
+    } catch (error) {
+      this.logger.error(`Erro ao ler arquivo local: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Falha ao recuperar PDF');
     }
   }
 }
