@@ -8,3 +8,9 @@
     "watchAssets": true
   }
 }
+
+{
+  "compilerOptions": {
+    "assets": ["**/*.hbs"]
+  }
+}
