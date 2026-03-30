@@ -1,4 +1,4 @@
-// src/main.ts
+// apps/api/src/main.ts
 process.env.TZ = 'America/Sao_Paulo';
 
 import { NestFactory } from '@nestjs/core';
@@ -31,13 +31,8 @@ async function bootstrap() {
     }),
   );
 
-  // Lista de origens permitidas (pode vir de variável de ambiente)
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
-    .split(',')
-    .map(o => o.trim())
-    .filter(Boolean);
-
-  // Origens padrão (inclui admin, www e previews da Vercel)
+  // ================= CONFIGURAÇÃO CORS CORRIGIDA =================
+  // Origens padrão (inclui domínios principais e previews da Vercel)
   const defaultOrigins = [
     'https://www.mecpro.tec.br',
     'https://mecpro.tec.br',
@@ -50,32 +45,45 @@ async function bootstrap() {
     'http://localhost:8080',
   ];
 
-  const origins = allowedOrigins.length > 0 ? allowedOrigins : defaultOrigins;
+  // Lê ALLOWED_ORIGINS do ambiente, se existir
+  const envOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean);
 
-  // Configuração de CORS
+  // Combina as origens padrão com as do ambiente (sem duplicatas)
+  const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
+
+  console.log('✅ CORS - Origens permitidas:', allowedOrigins);
+
+  // Função para verificar se uma origem é permitida
+  const isOriginAllowed = (origin: string): boolean => {
+    // Permite requisições sem origin (curl, ferramentas)
+    if (!origin) return true;
+
+    // Verificação exata
+    if (allowedOrigins.includes(origin)) return true;
+
+    // Permite localhost em qualquer porta
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
+
+    // Permite qualquer subdomínio de mecpro.tec.br
+    if (origin.match(/^https?:\/\/.*\.mecpro\.tec\.br$/)) return true;
+
+    // Permite qualquer subdomínio de vercel.app (previews)
+    if (origin.match(/^https?:\/\/.*\.vercel\.app$/)) return true;
+
+    return false;
+  };
+
   app.enableCors({
     origin: (origin, callback) => {
-      // Permite requisições sem origin (curl, ferramentas de saúde)
-      if (!origin) return callback(null, true);
-
-      // Verifica se a origem está na lista de permitidas
-      const isAllowed = origins.some(allowed => {
-        // Comparação exata
-        if (allowed === origin) return true;
-        // Permite subdomínios de domínios principais (ex: admin.mecpro.tec.br)
-        if (origin.endsWith(`.${allowed.replace('https://', '')}`)) return true;
-        // Permite localhost em qualquer porta
-        if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
-        return false;
-      });
-
-      if (isAllowed) {
-        return callback(null, true);
+      if (isOriginAllowed(origin)) {
+        callback(null, true);
+      } else {
+        console.warn(`❌ CORS bloqueado para origem: ${origin}`);
+        callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
       }
-
-      // Em produção, rejeita origens não autorizadas
-      console.warn(`❌ CORS bloqueado para origem: ${origin}`);
-      callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
