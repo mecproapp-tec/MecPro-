@@ -32,12 +32,17 @@ api.interceptors.response.use(
       console.error("🚨 Backend retornou HTML (rota errada ou server offline)");
     }
 
-    if (error.response?.status === 401) {
+    const isLoginRequest = error.config?.url?.includes("/auth/login");
+
+    // 🚀 CORREÇÃO PRINCIPAL
+    if (error.response?.status === 401 && !isLoginRequest) {
       console.warn("🔐 Token expirado. Fazendo logout...");
+
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       localStorage.removeItem("oficina");
-      window.location.href = "/login";
+
+      window.location.replace("/login");
     }
 
     return Promise.reject(error);
