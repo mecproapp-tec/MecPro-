@@ -1,4 +1,4 @@
-import api from "./api";
+import api from "../../../services/api"; // caminho correto
 
 export interface Client {
   id: number;
@@ -32,7 +32,10 @@ export const createClient = async (data: CreateClientData): Promise<Client> => {
   return response.data;
 };
 
-export const updateClient = async (id: number, data: CreateClientData): Promise<Client> => {
+export const updateClient = async (
+  id: number,
+  data: CreateClientData
+): Promise<Client> => {
   const response = await api.put(`/clients/${id}`, data);
   return response.data;
 };

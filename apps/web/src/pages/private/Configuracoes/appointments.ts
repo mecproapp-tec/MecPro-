@@ -1,9 +1,9 @@
-import api from "./api";
+import api from "../../../services/api";
 
 export interface Appointment {
   id: number;
   clientId: number;
-  date: string; // ISO string
+  date: string;
   comment?: string;
   client?: {
     name: string;
@@ -20,12 +20,19 @@ export const getAppointmentById = async (id: number): Promise<Appointment> => {
   return response.data;
 };
 
-export const createAppointment = async (data: { clientId: number; date: string; comment?: string }): Promise<Appointment> => {
+export const createAppointment = async (data: {
+  clientId: number;
+  date: string;
+  comment?: string;
+}): Promise<Appointment> => {
   const response = await api.post("/appointments", data);
   return response.data;
 };
 
-export const updateAppointment = async (id: number, data: { clientId: number; date: string; comment?: string }): Promise<Appointment> => {
+export const updateAppointment = async (
+  id: number,
+  data: { clientId: number; date: string; comment?: string }
+): Promise<Appointment> => {
   const response = await api.put(`/appointments/${id}`, data);
   return response.data;
 };
