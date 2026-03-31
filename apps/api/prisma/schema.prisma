@@ -31,7 +31,7 @@ model PendingSubscription {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   status         String   @default("pending")
-  tenantId       String?           // 🔥 NOVO – ligação direta com o tenant
+  tenantId       String?
   tenant         Tenant?  @relation(fields: [tenantId], references: [id])
 
   @@index([email, status])
@@ -46,7 +46,7 @@ model Tenant {
   documentNumber         String                  @unique
   cep                    String
   address                String
-  email                  String                  @unique  // 🔥 AGORA ÚNICO (para vínculo correto)
+  email                  String                  @unique
   phone                  String
   logoUrl                String?
   status                 TenantStatus            @default(ACTIVE)
@@ -65,7 +65,7 @@ model Tenant {
   scheduledNotifications ScheduledNotification[]
   subscriptions          Subscription[]
   users                  User[]
-  pendingSubscriptions   PendingSubscription[]   // 🔥 NOVA RELAÇÃO (opcional)
+  pendingSubscriptions   PendingSubscription[]
 
   @@index([status])
   @@index([email])
@@ -198,7 +198,7 @@ model Appointment {
   comment       String?
   date          DateTime
   id            Int            @id @default(autoincrement())
-  client        Client         @relation(fields: [clientId], references: [id])
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade) // ✅ CASCADE ADICIONADO
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   notifications Notification[]
 
@@ -222,7 +222,7 @@ model Estimate {
   pdfGeneratedAt    DateTime?      @map("pdf_generated_at")
   pdfStatus         String?        @default("pending") @map("pdf_status")
   pdfUrl            String?        @map("pdf_url")
-  client            Client         @relation(fields: [clientId], references: [id])
+  client            Client         @relation(fields: [clientId], references: [id], onDelete: Cascade) // ✅ CASCADE ADICIONADO
   tenant            Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   items             EstimateItem[]
   invoice           Invoice?
@@ -258,7 +258,7 @@ model Budget {
   total     Float
   status    String
   createdAt DateTime @default(now())
-  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade) // ✅ já tinha Cascade
 
   @@index([tenantId])
   @@index([clientId])
@@ -279,7 +279,7 @@ model Invoice {
   pdfGeneratedAt    DateTime?     @map("pdf_generated_at")
   pdfStatus         String?       @default("pending") @map("pdf_status")
   pdfUrl            String?       @map("pdf_url")
-  client            Client        @relation(fields: [clientId], references: [id])
+  client            Client        @relation(fields: [clientId], references: [id], onDelete: Cascade) // ✅ CASCADE ADICIONADO
   estimate          Estimate?     @relation(fields: [estimateId], references: [id])
   tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   items             InvoiceItem[]

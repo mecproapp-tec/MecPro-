@@ -287,13 +287,19 @@ export class EstimatesService {
     }
   }
 
+  /**
+   * Envia o orçamento via WhatsApp.
+   * Sempre gera um token de compartilhamento (se expirado ou ausente) e retorna o link
+   * público do PDF junto com o link do WhatsApp.
+   * Se o PDF ainda não foi gerado, enfileira a geração assíncrona.
+   */
   async sendViaWhatsApp(
     id: number,
     tenantId: string,
     workshopData?: any,
     userRole?: string,
-  ): Promise<{ whatsappLink?: string; message: string; pdfUrl?: string; queued?: boolean }> {
-    const where: any = { id, tenantId };
+  ): Promise<{ whatsappLink: string; pdfUrl: string }> {
+    const where: any = { id };
     if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN') {
       where.tenantId = tenantId;
     }
@@ -308,77 +314,88 @@ export class EstimatesService {
       throw new BadRequestException('Cliente não possui telefone cadastrado');
     }
 
-    if (estimate.pdfUrl && estimate.pdfStatus === 'generated') {
-      const pdfUrl = estimate.pdfUrl;
-      const message = this.buildWhatsAppMessage(estimate, pdfUrl);
-      const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
-      return { whatsappLink, message, pdfUrl };
+    // 1. Gerar token de compartilhamento (ou reutilizar se válido)
+    let token = estimate.shareToken;
+    if (!token || (estimate.shareTokenExpires && new Date() > estimate.shareTokenExpires)) {
+      token = await this.generateShareToken(estimate.id, tenantId, userRole);
     }
 
-    const tenant = estimate.tenant;
-    const effectiveTenant = workshopData
-      ? {
-          ...tenant,
-          name: workshopData.name || tenant.name,
-          documentNumber: workshopData.documentNumber || tenant.documentNumber,
-          phone: workshopData.phone || tenant.phone,
-          email: workshopData.email || tenant.email,
-          logoUrl: workshopData.logoUrl || tenant.logoUrl,
-        }
-      : tenant;
+    // 2. Construir URL pública do PDF
+    const apiBase = (process.env.API_URL || process.env.APP_URL || 'https://api.mecpro.tec.br').replace(/\/api$/, '');
+    const pdfUrl = `${apiBase}/api/public/estimates/share/${token}`;
 
-    const estimateData = {
-      logoUrl: effectiveTenant.logoUrl,
-      estimateNumber: estimate.id,
-      client: {
-        name: client.name,
-        document: client.document || 'Não informado',
-        address: client.address || 'Não informado',
-        phone: client.phone,
-        vehicle: client.vehicle,
-        plate: client.plate,
-      },
-      issueDate: new Date(estimate.date).toLocaleDateString('pt-BR'),
-      validUntil: new Date(new Date(estimate.date).getTime() + 10 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
-      status: estimate.status === 'DRAFT' ? 'Pendente' : estimate.status === 'APPROVED' ? 'Aceito' : 'Convertido',
-      items: estimate.items.map(item => ({
-        description: item.description,
-        quantity: item.quantity,
-        unitPrice: item.price.toFixed(2),
-        issPercent: item.issPercent || 0,
-        total: item.total.toFixed(2),
-      })),
-      subtotal: estimate.items.reduce((acc, item) => acc + (item.price * item.quantity), 0).toFixed(2),
-      issValue: estimate.items.reduce((acc, item) => {
-        const iss = item.issPercent ? item.price * (item.issPercent / 100) * item.quantity : 0;
-        return acc + iss;
-      }, 0).toFixed(2),
-      total: estimate.total.toFixed(2),
-      companyName: effectiveTenant.name || 'Oficina Mecânica',
-      companyDocument: effectiveTenant.documentNumber || '00.000.000/0001-00',
-      companyPhone: effectiveTenant.phone || '(11) 1234-5678',
-      companyEmail: effectiveTenant.email || 'contato@oficina.com',
-    };
+    // 3. Se o PDF ainda não foi gerado, enfileira a geração assíncrona (não bloqueia o envio)
+    if (!estimate.pdfUrl || estimate.pdfStatus !== 'generated') {
+      // Prepara os dados para o processador da fila
+      const tenant = estimate.tenant;
+      const effectiveTenant = workshopData
+        ? {
+            ...tenant,
+            name: workshopData.name ?? tenant.name,
+            documentNumber: workshopData.documentNumber ?? tenant.documentNumber,
+            phone: workshopData.phone ?? tenant.phone,
+            email: workshopData.email ?? tenant.email,
+            logoUrl: workshopData.logoUrl ?? tenant.logoUrl,
+          }
+        : tenant;
 
-    await this.pdfQueue.add('generate', {
-      tenantId,
-      entityId: id,
-      entityType: 'estimate',
-      data: estimateData,
-    });
+      const estimateData = {
+        logoUrl: effectiveTenant.logoUrl,
+        estimateNumber: estimate.id,
+        client: {
+          name: client.name,
+          document: client.document || 'Não informado',
+          address: client.address || 'Não informado',
+          phone: client.phone,
+          vehicle: client.vehicle,
+          plate: client.plate,
+        },
+        issueDate: new Date(estimate.date).toLocaleDateString('pt-BR'),
+        validUntil: new Date(new Date(estimate.date).getTime() + 10 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        status: estimate.status === 'DRAFT' ? 'Pendente' : estimate.status === 'APPROVED' ? 'Aceito' : 'Convertido',
+        items: estimate.items.map(item => ({
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.price.toFixed(2),
+          issPercent: item.issPercent || 0,
+          total: item.total.toFixed(2),
+        })),
+        subtotal: estimate.items.reduce((acc, item) => acc + (item.price * item.quantity), 0).toFixed(2),
+        issValue: estimate.items.reduce((acc, item) => {
+          const iss = item.issPercent ? item.price * (item.issPercent / 100) * item.quantity : 0;
+          return acc + iss;
+        }, 0).toFixed(2),
+        total: estimate.total.toFixed(2),
+        companyName: effectiveTenant.name || 'Oficina Mecânica',
+        companyDocument: effectiveTenant.documentNumber || '00.000.000/0001-00',
+        companyPhone: effectiveTenant.phone || '(11) 1234-5678',
+        companyEmail: effectiveTenant.email || 'contato@oficina.com',
+      };
 
-    await this.prisma.estimate.update({
-      where: { id, tenantId },
-      data: { pdfStatus: 'pending' },
-    });
+      await this.pdfQueue.add('generate', {
+        tenantId,
+        entityId: id,
+        entityType: 'estimate',
+        data: estimateData,
+      });
 
-    return {
-      message: 'PDF em processamento. O link será enviado em breve.',
-      queued: true,
-    };
+      // Marca como pendente para não enfileirar novamente
+      await this.prisma.estimate.update({
+        where: { id, tenantId },
+        data: { pdfStatus: 'pending' },
+      });
+    }
+
+    // 4. Construir mensagem do WhatsApp com o link público
+    const message = this.buildWhatsAppMessage(estimate, pdfUrl);
+    const whatsappLink = this.whatsappService.generateWhatsAppLink(client.phone, message);
+
+    return { whatsappLink, pdfUrl };
   }
 
-  // 🟢 Mensagem do WhatsApp agora inclui documento e endereço do cliente
+  /**
+   * Constrói a mensagem do WhatsApp com os dados do cliente e o link do PDF.
+   */
   private buildWhatsAppMessage(estimate: any, pdfUrl: string): string {
     const client = estimate.client;
     const documentText = client.document ? `📄 Documento: ${client.document}` : '';

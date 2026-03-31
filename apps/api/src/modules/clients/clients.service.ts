@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
-import { Client } from '@prisma/client';
+import { Client, Prisma } from '@prisma/client';
 
 @Injectable()
 export class ClientsService {
@@ -112,8 +112,22 @@ export class ClientsService {
     tenantId: string | number,
     userRole?: string,
   ): Promise<{ message: string }> {
+    // Verifica se o cliente existe e tem permissão
     await this.findOne(id, tenantId, userRole);
-    await this.prisma.client.delete({ where: { id } });
-    return { message: 'Cliente removido com sucesso' };
+
+    try {
+      await this.prisma.client.delete({ where: { id } });
+      return { message: 'Cliente removido com sucesso' };
+    } catch (error) {
+      // Caso ainda haja dependência não tratada pelo cascade (ex: se alguma relação não tiver cascade)
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new InternalServerErrorException(
+          'Não é possível excluir o cliente pois existem registros relacionados (agendamentos, orçamentos ou faturas). Verifique as dependências.',
+        );
+      }
+      // Outros erros inesperados
+      console.error('Erro ao excluir cliente:', error);
+      throw new InternalServerErrorException('Erro interno ao excluir cliente.');
+    }
   }
 }

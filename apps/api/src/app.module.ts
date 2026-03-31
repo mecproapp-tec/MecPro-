@@ -22,7 +22,7 @@ import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { QueueModule } from './modules/common/queues/queue.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { UsersModule } from './modules/users/users.module';
-import { PdfProcessor } from './modules/common/queues/pdf-processor.service';
+import { PdfModule } from './modules/pdf/pdf.module'; // <-- importe o PdfModule
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -31,8 +31,8 @@ import { AppService } from './app.service';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
-    QueueModule,
-    BullModule.registerQueue({ name: 'pdf' }),
+    QueueModule,               // <-- se este módulo já configura o Bull, mantenha
+    BullModule.registerQueue({ name: 'pdf' }), // <-- se já configurado em QueueModule, pode remover
     PrismaModule,
     SharedModule,
     AuthModule,
@@ -50,8 +50,9 @@ import { AppService } from './app.service';
     WhatsappModule,
     StorageModule,
     UsersModule,
+    PdfModule,                // <-- adicione o PdfModule
   ],
   controllers: [AppController],
-  providers: [AppService, PdfProcessor],
+  providers: [AppService],    // <-- remova o PdfProcessor daqui
 })
 export class AppModule {}

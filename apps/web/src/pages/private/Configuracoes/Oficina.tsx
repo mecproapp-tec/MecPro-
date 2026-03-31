@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiUpload, FiTrash2, FiSave } from "react-icons/fi";
+import { updateTenant } from "../../../services/tenant";
 
-// Configuração de limites e dicas para cada tipo de documento
 const DOCUMENT_CONFIG = {
   CPF: { max: 11, hint: "000.000.000-00" },
   MEI: { max: 14, hint: "00.000.000/0000-00" },
@@ -16,7 +16,7 @@ const DOCUMENT_CONFIG = {
 interface OficinaData {
   nome: string;
   tipoDocumento: "CPF" | "MEI" | "ME" | "EPP" | "LTDA" | "SLU" | "SA";
-  documento: string; // armazenado sem formatação (apenas números)
+  documento: string;
   numero: string;
   endereco: string;
   telefone: string;
@@ -37,6 +37,7 @@ export default function OficinaConfig() {
     logo: "",
   });
   const [logoPreview, setLogoPreview] = useState<string>("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("oficina");
@@ -47,31 +48,23 @@ export default function OficinaConfig() {
     }
   }, []);
 
-  // Função para aplicar máscara no documento
   const formatDocumento = (value: string, tipo: string): string => {
-    // Remove tudo que não é dígito
     const digits = value.replace(/\D/g, "");
     const max = DOCUMENT_CONFIG[tipo as keyof typeof DOCUMENT_CONFIG]?.max || 14;
-
-    // Limita ao tamanho máximo
     const limited = digits.slice(0, max);
-
-    // Aplica máscara conforme o tipo
     if (tipo === "CPF") {
-      // 000.000.000-00
       return limited
         .replace(/^(\d{3})(\d)/, "$1.$2")
         .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
         .replace(/\.(\d{3})(\d)/, ".$1-$2")
-        .slice(0, 14); // tamanho máximo com máscara
+        .slice(0, 14);
     } else {
-      // CNPJ: 00.000.000/0000-00
       return limited
         .replace(/^(\d{2})(\d)/, "$1.$2")
         .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
         .replace(/\.(\d{3})(\d)/, ".$1/$2")
         .replace(/(\d{4})(\d)/, "$1-$2")
-        .slice(0, 18); // tamanho máximo com máscara
+        .slice(0, 18);
     }
   };
 
@@ -79,17 +72,14 @@ export default function OficinaConfig() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-
     if (name === "tipoDocumento") {
-      // Ao mudar o tipo, reformata o documento atual (se houver)
       const novoDocumento = formatDocumento(oficina.documento, value);
       setOficina((prev) => ({
         ...prev,
         tipoDocumento: value as OficinaData["tipoDocumento"],
-        documento: novoDocumento.replace(/\D/g, ""), // armazena só números
+        documento: novoDocumento.replace(/\D/g, ""),
       }));
     } else if (name === "documento") {
-      // Aplica a máscara e armazena apenas números
       const rawValue = value.replace(/\D/g, "");
       const max = DOCUMENT_CONFIG[oficina.tipoDocumento].max;
       const limited = rawValue.slice(0, max);
@@ -117,14 +107,29 @@ export default function OficinaConfig() {
     setOficina((prev) => ({ ...prev, logo: "" }));
   };
 
-  const handleSave = () => {
-    localStorage.setItem("oficina", JSON.stringify(oficina));
-    alert("Dados da oficina salvos com sucesso!");
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateTenant({
+        nome: oficina.nome,
+        documento: oficina.documento,
+        numero: oficina.numero,
+        endereco: oficina.endereco,
+        telefone: oficina.telefone,
+        email: oficina.email,
+        logo: oficina.logo,
+      });
+      localStorage.setItem("oficina", JSON.stringify(oficina));
+      alert("Dados da oficina salvos com sucesso!");
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao salvar dados. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const config = DOCUMENT_CONFIG[oficina.tipoDocumento];
-
-  // Valor exibido no campo documento (formatado)
   const documentoDisplay = formatDocumento(oficina.documento, oficina.tipoDocumento);
 
   return (
@@ -138,7 +143,6 @@ export default function OficinaConfig() {
       }}
     >
       <div style={{ maxWidth: "800px", margin: "0 auto" }}>
-        {/* Cabeçalho com voltar */}
         <div style={{ display: "flex", alignItems: "center", marginBottom: "40px" }}>
           <button
             onClick={() => navigate(-1)}
@@ -178,7 +182,6 @@ export default function OficinaConfig() {
           </h1>
         </div>
 
-        {/* Formulário */}
         <div
           style={{
             background: "#111",
@@ -188,7 +191,6 @@ export default function OficinaConfig() {
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {/* Nome da Oficina */}
             <div>
               <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
                 Nome da Oficina
@@ -210,7 +212,6 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Tipo de Documento e Número do Documento */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "16px" }}>
               <div>
                 <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
@@ -248,7 +249,7 @@ export default function OficinaConfig() {
                   name="documento"
                   value={documentoDisplay}
                   onChange={handleChange}
-                  maxLength={config.max + 5} // espaço extra para máscara
+                  maxLength={config.max + 5}
                   placeholder={config.hint}
                   style={{
                     width: "100%",
@@ -266,7 +267,6 @@ export default function OficinaConfig() {
               </div>
             </div>
 
-            {/* Número (endereço) */}
             <div>
               <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
                 Endereço (rua e numero)
@@ -288,10 +288,9 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Endereço */}
             <div>
               <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                 Bairro (Cidade)
+                Bairro (Cidade)
               </label>
               <input
                 type="text"
@@ -310,7 +309,6 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Telefone */}
             <div>
               <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
                 Telefone
@@ -332,7 +330,6 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Email */}
             <div>
               <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
                 Email
@@ -354,7 +351,6 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Logo */}
             <div>
               <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
                 Logo da Oficina
@@ -428,9 +424,9 @@ export default function OficinaConfig() {
               )}
             </div>
 
-            {/* Botão Salvar */}
             <button
               onClick={handleSave}
+              disabled={saving}
               style={{
                 background: "linear-gradient(135deg, #00e5ff, #0077ff)",
                 color: "#000",
@@ -439,7 +435,7 @@ export default function OficinaConfig() {
                 fontWeight: "600",
                 fontSize: "1rem",
                 border: "none",
-                cursor: "pointer",
+                cursor: saving ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -447,11 +443,16 @@ export default function OficinaConfig() {
                 transition: "all 0.2s",
                 boxShadow: "0 8px 20px rgba(0, 229, 255, 0.3)",
                 marginTop: "16px",
+                opacity: saving ? 0.7 : 1,
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.02)")}
-              onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+              onMouseEnter={(e) => {
+                if (!saving) e.currentTarget.style.transform = "scale(1.02)";
+              }}
+              onMouseLeave={(e) => {
+                if (!saving) e.currentTarget.style.transform = "scale(1)";
+              }}
             >
-              <FiSave size={20} /> Salvar Dados
+              <FiSave size={20} /> {saving ? "Salvando..." : "Salvar Dados"}
             </button>
           </div>
         </div>
