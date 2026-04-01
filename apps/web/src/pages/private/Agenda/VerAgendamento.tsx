@@ -30,8 +30,8 @@ const VerAgendamento: React.FC = () => {
     return (
       <div style={styles.errorContainer}>
         <p style={styles.error}>Erro ao carregar agendamento. Tente novamente.</p>
-        <button onClick={() => navigate('/agendamentos')} style={styles.backButton}>
-          Voltar para lista
+        <button onClick={() => navigate('/clientes')} style={styles.backButton}>
+          Voltar para clientes
         </button>
       </div>
     );
@@ -48,7 +48,7 @@ const VerAgendamento: React.FC = () => {
     <div style={styles.container}>
       <div style={styles.innerContainer}>
         <div style={styles.header}>
-          <button onClick={() => navigate('/agendamentos')} style={styles.backIcon}>
+          <button onClick={() => navigate(`/clientes/ver/${appointment.clientId}`)} style={styles.backIcon}>
             <FiArrowLeft size={24} />
           </button>
           <h1 style={styles.title}>Detalhes do Agendamento</h1>
