@@ -86,7 +86,8 @@ export default function Agendamento() {
       });
 
       alert("Agendamento salvo com sucesso");
-      navigate(`/clientes/ver/${cliente.id}`);
+      // ✅ Redireciona para a lista de clientes (não para detalhes)
+      navigate("/clientes");
     } catch (err: any) {
       alert(err.response?.data?.message || "Erro ao salvar agendamento");
     } finally {
