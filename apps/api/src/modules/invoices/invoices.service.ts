@@ -1,3 +1,5 @@
+// C:\Users\admco\OneDrive\Escritorio\MecPro\apps\api\src\modules\invoices\invoices.service.ts
+
 import {
   Injectable,
   NotFoundException,
@@ -262,8 +264,9 @@ export class InvoicesService {
         try {
           const pdfBuffer = await this.storageService.get(invoice.pdfUrl);
           return { pdfUrl: invoice.pdfUrl, pdfBuffer };
-        } catch (err) {
-          this.logger.warn(`Erro ao recuperar PDF do R2: ${err.message}. Gerando novo.`);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          this.logger.warn(`Erro ao recuperar PDF do R2: ${errorMessage}. Gerando novo.`);
         }
       }
 
@@ -294,8 +297,10 @@ export class InvoicesService {
 
       this.logger.log(`PDF gerado e salvo: ${pdfUrl}`);
       return { pdfUrl, pdfBuffer };
-    } catch (error) {
-      this.logger.error(`Erro em getPdfByShareToken:`, error.stack);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Erro em getPdfByShareToken: ${errorMessage}`, errorStack);
       if (error instanceof UnauthorizedException || error instanceof BadRequestException) {
         throw error;
       }
@@ -333,23 +338,35 @@ export class InvoicesService {
       token = await this.generateShareToken(id, tenantId, userRole);
     }
 
-    const apiBase = (process.env.API_URL || process.env.APP_URL || '').replace(/\/api$/, '');
+    const apiBase = process.env.API_URL
+      ? process.env.API_URL.replace(/\/api$/, '')
+      : 'https://api.mecpro.tec.br';
     const pdfUrl = `${apiBase}/api/public/invoices/share/${token}`;
+    this.logger.log(`Link público gerado: ${pdfUrl}`);
 
     if (!invoice.pdfUrl || invoice.pdfStatus !== 'generated') {
       this.logger.log('Gerando PDF agora...');
       const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice, invoice.tenant);
       const key = `${tenantId}/invoices/${id}.pdf`;
-      const uploadedUrl = await this.storageService.upload(pdfBuffer, key);
-      await this.prisma.invoice.update({
-        where: { id },
-        data: {
-          pdfUrl: uploadedUrl,
-          pdfStatus: 'generated',
-          pdfGeneratedAt: new Date(),
-        },
-      });
-      this.logger.log(`✅ PDF gerado e salvo: ${uploadedUrl}`);
+      try {
+        const uploadedUrl = await this.storageService.upload(pdfBuffer, key);
+        if (!uploadedUrl) {
+          throw new Error('Upload retornou URL vazia');
+        }
+        await this.prisma.invoice.update({
+          where: { id },
+          data: {
+            pdfUrl: uploadedUrl,
+            pdfStatus: 'generated',
+            pdfGeneratedAt: new Date(),
+          },
+        });
+        this.logger.log(`✅ PDF gerado e salvo: ${uploadedUrl}`);
+      } catch (uploadError: unknown) {
+        const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
+        this.logger.error(`❌ Falha no upload do PDF: ${errorMessage}`);
+        throw new InternalServerErrorException('Não foi possível salvar o PDF. Contate o suporte.');
+      }
     }
 
     const message = this.buildWhatsAppMessage(invoice, pdfUrl);

@@ -1,3 +1,5 @@
+// C:\Users\admco\OneDrive\Escritorio\MecPro\apps\api\src\modules\estimates\estimates.service.ts
+
 import {
   Injectable,
   NotFoundException,
@@ -250,8 +252,9 @@ export class EstimatesService {
         try {
           const pdfBuffer = await this.storageService.get(estimate.pdfUrl);
           return { pdfUrl: estimate.pdfUrl, pdfBuffer };
-        } catch (err) {
-          this.logger.warn(`Erro ao recuperar PDF do R2: ${err.message}. Gerando novo.`);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          this.logger.warn(`Erro ao recuperar PDF do R2: ${errorMessage}. Gerando novo.`);
         }
       }
 
@@ -282,8 +285,10 @@ export class EstimatesService {
 
       this.logger.log(`PDF gerado e salvo: ${pdfUrl}`);
       return { pdfUrl, pdfBuffer };
-    } catch (error) {
-      this.logger.error(`Erro em getPdfByShareToken:`, error.stack);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Erro em getPdfByShareToken: ${errorMessage}`, errorStack);
       if (error instanceof UnauthorizedException || error instanceof BadRequestException) {
         throw error;
       }
@@ -321,8 +326,11 @@ export class EstimatesService {
       token = await this.generateShareToken(id, tenantId, userRole);
     }
 
-    const apiBase = (process.env.API_URL || process.env.APP_URL || '').replace(/\/api$/, '');
+    const apiBase = process.env.API_URL
+      ? process.env.API_URL.replace(/\/api$/, '')
+      : 'https://api.mecpro.tec.br';
     const pdfPublicUrl = `${apiBase}/api/public/estimates/share/${token}`;
+    this.logger.log(`Link público gerado: ${pdfPublicUrl}`);
 
     if (!estimate.pdfUrl || estimate.pdfStatus !== 'generated') {
       this.logger.log('Gerando PDF agora...');
@@ -331,16 +339,25 @@ export class EstimatesService {
         estimate.tenant,
       );
       const key = `${tenantId}/estimates/${id}.pdf`;
-      const pdfUrl = await this.storageService.upload(pdfBuffer, key);
-      await this.prisma.estimate.update({
-        where: { id },
-        data: {
-          pdfUrl,
-          pdfStatus: 'generated',
-          pdfGeneratedAt: new Date(),
-        },
-      });
-      this.logger.log(`✅ PDF gerado e salvo: ${pdfUrl}`);
+      try {
+        const pdfUrl = await this.storageService.upload(pdfBuffer, key);
+        if (!pdfUrl) {
+          throw new Error('Upload retornou URL vazia');
+        }
+        await this.prisma.estimate.update({
+          where: { id },
+          data: {
+            pdfUrl,
+            pdfStatus: 'generated',
+            pdfGeneratedAt: new Date(),
+          },
+        });
+        this.logger.log(`✅ PDF gerado e salvo: ${pdfUrl}`);
+      } catch (uploadError: unknown) {
+        const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
+        this.logger.error(`❌ Falha no upload do PDF: ${errorMessage}`);
+        throw new InternalServerErrorException('Não foi possível salvar o PDF. Contate o suporte.');
+      }
     }
 
     const message = this.buildWhatsAppMessage(estimate, pdfPublicUrl);
