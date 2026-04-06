@@ -24,10 +24,7 @@ export class StorageService {
     this.publicUrl = process.env.CLOUDFLARE_R2_PUBLIC_URL!;
     const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
 
-    const endpoint = accountId
-      ? `https://${accountId}.r2.cloudflarestorage.com`
-      : null;
-
+    const endpoint = process.env.CLOUDFLARE_R2_ENDPOINT;
     // 🔥 validação segura
     if (
       !this.bucket ||
@@ -37,8 +34,7 @@ export class StorageService {
       !process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY
     ) {
       this.logger.error('❌ R2 não configurado corretamente — usando fallback local');
-      this.useFallback = true;
-      return;
+      throw new Error('R2 não configurado corretamente');
     }
 
     this.s3 = new S3Client({
@@ -83,8 +79,8 @@ export class StorageService {
       return url;
     } catch (error) {
       this.logger.error('❌ Erro no upload R2, ativando fallback', error);
-      this.useFallback = true;
-      return this.saveToLocal(file, key);
+   this.logger.error('❌ Erro no upload R2', error);
+   throw new InternalServerErrorException('Erro ao enviar PDF para storage');
     }
   }
 

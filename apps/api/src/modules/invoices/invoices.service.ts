@@ -97,7 +97,6 @@ export class InvoicesService {
       include: { items: true, client: true, tenant: true },
     });
 
-    // 🔥 FILA PDF
     await this.pdfQueue.add('generate-pdf', {
       tenantId,
       entityId: invoice.id,
@@ -191,7 +190,7 @@ export class InvoicesService {
   }
 
   // =========================
-  // TOKEN
+  // TOKEN (CORRIGIDO)
   // =========================
   async generateShareToken(id: number) {
     const invoice = await this.prisma.invoice.findUnique({
@@ -202,21 +201,14 @@ export class InvoicesService {
       throw new NotFoundException('Fatura não encontrada');
     }
 
-    if (
-      invoice.shareToken &&
-      invoice.shareTokenExpires &&
-      new Date() < invoice.shareTokenExpires
-    ) {
-      return invoice.shareToken;
-    }
-
     const token = randomBytes(32).toString('hex');
 
-    await this.prisma.invoice.update({
-      where: { id },
+    await this.prisma.publicShare.create({
       data: {
-        shareToken: token,
-        shareTokenExpires: new Date(Date.now() + 7 * 86400000),
+        token,
+        type: 'invoice',
+        entityId: String(id),
+        expiresAt: new Date(Date.now() + 7 * 86400000),
       },
     });
 
@@ -224,11 +216,27 @@ export class InvoicesService {
   }
 
   // =========================
-  // PDF PUBLICO
+  // PDF PUBLICO (CORRIGIDO)
   // =========================
   async getPdfByShareToken(token: string): Promise<PdfResult> {
-    const invoice = await this.prisma.invoice.findFirst({
-      where: { shareToken: token },
+    const share = await this.prisma.publicShare.findUnique({
+      where: { token },
+    });
+
+    if (!share) {
+      throw new UnauthorizedException('Token inválido');
+    }
+
+    if (share.type !== 'invoice') {
+      throw new UnauthorizedException('Tipo inválido');
+    }
+
+    if (share.expiresAt && new Date() > share.expiresAt) {
+      throw new UnauthorizedException('Token expirado');
+    }
+
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: Number(share.entityId) },
       include: {
         client: true,
         items: true,
@@ -237,14 +245,7 @@ export class InvoicesService {
     });
 
     if (!invoice) {
-      throw new UnauthorizedException('Token inválido');
-    }
-
-    if (
-      invoice.shareTokenExpires &&
-      new Date() > invoice.shareTokenExpires
-    ) {
-      throw new UnauthorizedException('Token expirado');
+      throw new NotFoundException('Fatura não encontrada');
     }
 
     if (invoice.pdfUrl) {
@@ -286,10 +287,10 @@ export class InvoicesService {
 
     const token = await this.generateShareToken(id);
 
-    const frontendBase =
-      process.env.FRONTEND_URL || 'https://mecpro.tec.br';
+    const apiBase =
+      process.env.API_URL || 'https://api.mecpro.tec.br/api';
 
-    const link = `${frontendBase}/share/${token}`;
+    const link = `${apiBase}/public/invoices/share/${token}`;
 
     const message = `Olá ${invoice.client.name}!
 

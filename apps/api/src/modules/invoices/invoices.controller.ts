@@ -98,12 +98,12 @@ export class InvoicesController {
       Number(id),
     );
 
-    const baseUrl =
-      (process.env.API_URL || 'https://api.mecpro.tec.br/api').replace(/\/$/, '');
+   const baseUrl =
+  (process.env.API_URL || 'https://api.mecpro.tec.br').replace(/\/$/, '');
 
-    return {
-      url: `${baseUrl}/api/public/invoices/share/${token}`,
-    };
+return {
+  url: `${baseUrl}/public/invoices/share/${token}`,
+};
   }
 
   // 📲 WHATSAPP
