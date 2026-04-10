@@ -1,4 +1,4 @@
-<h1 style="color:red">TESTE NOVO 🔥🔥🔥</h1>
+
 
 
 
@@ -25,7 +25,17 @@ export class InvoicesPdfService {
 
   private loadTemplate(): HandlebarsTemplateDelegate {
     try {
-      const templatePath = path.join(__dirname, 'invoices-pdf.hbs');
+     const templatePath = path.resolve(
+  process.cwd(),
+  'dist',
+  'modules',
+  'invoices',
+  'templates',
+  'invoice-pdf.hbs',
+);
+
+this.logger.log(`Template path: ${templatePath}`);
+this.logger.log(`Existe? ${fs.existsSync(templatePath)}`);
 
       this.logger.log(`Carregando template: ${templatePath}`);
 
