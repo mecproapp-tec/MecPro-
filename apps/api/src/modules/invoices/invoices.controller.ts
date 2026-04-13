@@ -1,3 +1,4 @@
+// apps/api/src/modules/invoices/invoices.controller.ts
 import {
   Controller,
   Get,
@@ -13,6 +14,7 @@ import {
   NotFoundException,
   InternalServerErrorException,
   UnauthorizedException,
+  Query, // 🔥 IMPORTANTE: ADICIONADO
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
@@ -92,7 +94,6 @@ export class InvoicesController {
   ) {
     if (!user?.tenantId) throw new BadRequestException('TenantId não encontrado');
     const invoiceId = this.parseId(id);
-    // Se não enviou número, busca do cliente
     let finalPhone = phoneNumber;
     if (!finalPhone) {
       const invoice = await this.invoicesService.findOne(invoiceId, user.tenantId);
