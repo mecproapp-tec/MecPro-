@@ -1,3 +1,4 @@
+// apps/api/src/modules/estimates/estimates-pdf.service.ts
 import {
   Injectable,
   Logger,
@@ -6,7 +7,8 @@ import {
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as puppeteer from 'puppeteer';
+import * as puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 
 @Injectable()
 export class EstimatesPdfService {
@@ -15,6 +17,53 @@ export class EstimatesPdfService {
 
   constructor() {
     this.logger.log('EstimatesPdfService inicializado');
+  }
+
+  private async getBrowser() {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isWindows = process.platform === 'win32';
+
+    if (isProduction || !isWindows) {
+      // Produção ou Linux/Mac: usar @sparticuz/chromium
+      this.logger.log('Usando @sparticuz/chromium para PDF');
+      
+      const executablePath = await chromium.executablePath();
+      
+      // CORREÇÃO: chromium.args é uma função, não uma propriedade
+      const args = chromium.args || [];
+      
+      return puppeteer.launch({
+        args: [...args, '--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath,
+        headless: true, // SEMPRE true em produção
+      });
+    } else {
+      // Desenvolvimento no Windows: tentar encontrar Chrome
+      const possiblePaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        process.env.CHROME_PATH,
+      ].filter(Boolean);
+
+      for (const chromePath of possiblePaths) {
+        if (chromePath && fs.existsSync(chromePath)) {
+          this.logger.log(`Chrome encontrado em: ${chromePath}`);
+          return puppeteer.launch({
+            executablePath: chromePath,
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            headless: true,
+          });
+        }
+      }
+
+      // Fallback: tentar sem caminho específico (pode baixar Chromium)
+      this.logger.warn('Chrome não encontrado, tentando puppeteer padrão');
+      const puppeteerDefault = await import('puppeteer');
+      return puppeteerDefault.launch({
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        headless: true,
+      });
+    }
   }
 
   private loadTemplate(): HandlebarsTemplateDelegate {
@@ -113,16 +162,8 @@ export class EstimatesPdfService {
 
       this.logger.log(`Gerando PDF para orçamento ${estimate.id} (${items.length} itens)`);
 
-      browser = await puppeteer.launch({
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-        ],
-        headless: true,
-      });
+      // Inicia o browser com a configuração correta
+      browser = await this.getBrowser();
 
       const page = await browser.newPage();
       

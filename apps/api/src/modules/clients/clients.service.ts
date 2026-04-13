@@ -1,74 +1,70 @@
-import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { Client, Prisma } from '@prisma/client';
 
 @Injectable()
 export class ClientsService {
+  private readonly logger = new Logger(ClientsService.name);
+
   constructor(private prisma: PrismaService) {}
 
-  async create(
-    tenantId: string | number,
-    data: {
-      name: string;
-      phone: string;
-      vehicle: string;
-      plate: string;
-      document?: string;
-      address?: string;
-    },
-  ): Promise<Client> {
-    const tenantIdStr = String(tenantId);
+  async create(tenantId: string, data: any): Promise<Client> {
+    if (!data.name || !data.phone) {
+      throw new BadRequestException('Nome e telefone são obrigatórios');
+    }
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new BadRequestException('Tenant não encontrado');
+
     return this.prisma.client.create({
       data: {
-        tenantId: tenantIdStr,
+        tenantId,
         name: data.name,
         phone: data.phone,
-        vehicle: data.vehicle,
-        plate: data.plate,
-        document: data.document ?? null,
-        address: data.address ?? null,
+        vehicle: data.vehicle || null,
+        plate: data.plate || null,
+        document: data.document || null,
+        address: data.address || null,
       },
     });
   }
 
-  async findAll(
-    tenantId: string | number,
-    userRole?: string,
-  ): Promise<Partial<Client>[]> {
-    const tenantIdStr = String(tenantId);
-    const where: any = {};
-    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN') {
-      where.tenantId = tenantIdStr;
-    }
-    return this.prisma.client.findMany({
-      where,
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        vehicle: true,
-        plate: true,
-        address: true,
-        document: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+  async findAll(tenantId: string, page = 1, limit = 50) {
+    if (!tenantId) throw new BadRequestException('TenantId inválido');
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.client.findMany({
+        where: { tenantId },
+        skip,
+        take: limit,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          vehicle: true,
+          plate: true,
+          address: true,
+          document: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      this.prisma.client.count({ where: { tenantId } }),
+    ]);
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async findOne(
-    id: number,
-    tenantId: string | number,
-    userRole?: string,
-  ): Promise<Partial<Client>> {
-    const tenantIdStr = String(tenantId);
-    const where: any = { id };
-    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN') {
-      where.tenantId = tenantIdStr;
-    }
+  async findOne(id: number, tenantId: string): Promise<Partial<Client>> {
     const client = await this.prisma.client.findFirst({
-      where,
+      where: { id, tenantId },
       select: {
         id: true,
         name: true,
@@ -81,19 +77,12 @@ export class ClientsService {
         updatedAt: true,
       },
     });
-    if (!client) {
-      throw new NotFoundException('Cliente não encontrado');
-    }
+    if (!client) throw new NotFoundException('Cliente não encontrado');
     return client;
   }
 
-  async update(
-    id: number,
-    tenantId: string | number,
-    data: Partial<Omit<Client, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>>,
-    userRole?: string,
-  ): Promise<Client> {
-    await this.findOne(id, tenantId, userRole);
+  async update(id: number, tenantId: string, data: any): Promise<Client> {
+    await this.findOne(id, tenantId);
     return this.prisma.client.update({
       where: { id },
       data: {
@@ -107,27 +96,15 @@ export class ClientsService {
     });
   }
 
-  async remove(
-    id: number,
-    tenantId: string | number,
-    userRole?: string,
-  ): Promise<{ message: string }> {
-    // Verifica se o cliente existe e tem permissão
-    await this.findOne(id, tenantId, userRole);
-
+  async remove(id: number, tenantId: string): Promise<void> {
+    await this.findOne(id, tenantId);
     try {
       await this.prisma.client.delete({ where: { id } });
-      return { message: 'Cliente removido com sucesso' };
     } catch (error) {
-      // Caso ainda haja dependência não tratada pelo cascade (ex: se alguma relação não tiver cascade)
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
-        throw new InternalServerErrorException(
-          'Não é possível excluir o cliente pois existem registros relacionados (agendamentos, orçamentos ou faturas). Verifique as dependências.',
-        );
+        throw new BadRequestException('Cliente possui registros relacionados (agendamentos, orçamentos ou faturas).');
       }
-      // Outros erros inesperados
-      console.error('Erro ao excluir cliente:', error);
-      throw new InternalServerErrorException('Erro interno ao excluir cliente.');
+      throw new InternalServerErrorException('Erro ao excluir cliente');
     }
   }
 }

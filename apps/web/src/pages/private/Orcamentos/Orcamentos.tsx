@@ -10,15 +10,13 @@ import {
   FiMessageCircle,
   FiEye,
 } from "react-icons/fi";
-import { getEstimates, deleteEstimate, updateEstimate } from "../../../services/Estimates";
-import { createInvoice } from "../../../services/invoices";
+import { getEstimates, deleteEstimate, updateEstimate, convertEstimate, type Estimate } from "../../../services/Estimates";
 import { getClientById, getVehicleDisplay, type Client } from "../../../services/clients";
-import type { Estimate } from "../../../services/Estimates";
 import api from "../../../services/api";
 
 type FilterType = "todos" | "accepted" | "pending" | "converted";
 
-const statusMap = {
+const statusMap: Record<string, string> = {
   pending: "DRAFT",
   accepted: "APPROVED",
   converted: "CONVERTED",
@@ -68,7 +66,6 @@ export default function Orcamentos() {
   };
 
   const carregarClientesFaltantes = async (estimates: Estimate[]) => {
-    // Filtra apenas IDs válidos (número > 0)
     const missingClientIds = estimates
       .filter(est => !est.client && typeof est.clientId === 'number' && est.clientId > 0)
       .map(est => est.clientId)
@@ -112,7 +109,6 @@ export default function Orcamentos() {
   };
 
   const handleStatusChange = async (orcamento: Estimate, novoStatus: "accepted" | "pending") => {
-    // Verifica se o orçamento tem cliente válido
     if (!orcamento.clientId || typeof orcamento.clientId !== 'number' || orcamento.clientId <= 0) {
       alert("Este orçamento não possui um cliente válido. Corrija antes de alterar o status.");
       return;
@@ -140,30 +136,13 @@ export default function Orcamentos() {
       return;
     }
 
+    if (orcamento.status === "converted") {
+      alert("Este orçamento já foi convertido em fatura.");
+      return;
+    }
+
     try {
-      if (orcamento.status === "converted") {
-        alert("Este orçamento já foi convertido em fatura.");
-        return;
-      }
-      const invoiceData = {
-        clientId: orcamento.clientId,
-        items: orcamento.items.map(item => ({
-          description: item.description,
-          quantity: item.quantity ?? 1,
-          price: item.price,
-          total: (item.price * (item.quantity ?? 1)),
-          issPercent: item.issPercent,
-        })),
-        status: "PENDING",
-      };
-      await createInvoice(invoiceData);
-      const updatePayload = {
-        clientId: orcamento.clientId,
-        date: orcamento.date,
-        items: orcamento.items,
-        status: statusMap.converted,
-      };
-      await updateEstimate(orcamento.id, updatePayload);
+      await convertEstimate(orcamento.id);
       setOrcamentos(prev =>
         prev.map(o => (o.id === orcamento.id ? { ...o, status: "converted" } : o))
       );
@@ -185,16 +164,14 @@ export default function Orcamentos() {
       telefone = "55" + telefone;
     }
     try {
-      const response = await api.post(`/estimates/${orcamento.id}/share`);
-      const { url: link } = response.data;
-      const vehicleDisplay = getVehicleDisplay(cliente);
-      const mensagem = encodeURIComponent(
-        `${link}\n\nOlá ${cliente.name}!\n\nSeu orçamento está pronto ✅\n\n👤 Cliente: ${cliente.name}\n🚗 Veículo: ${vehicleDisplay}\n💰 Total: R$ ${orcamento.total.toFixed(2)}\n📌 Status: ${getStatusLabel(orcamento.status)}`
-      );
-      window.open(`https://wa.me/${telefone}?text=${mensagem}`, "_blank");
+      const response = await api.post(`/estimates/${orcamento.id}/send-whatsapp`, {
+        phoneNumber: telefone,
+      });
+      const { whatsappUrl } = response.data;
+      window.open(whatsappUrl, "_blank");
     } catch (error) {
-      console.error("Erro ao gerar link do orçamento:", error);
-      alert("Erro ao gerar link do orçamento. Tente novamente.");
+      console.error("Erro ao enviar WhatsApp:", error);
+      alert("Erro ao enviar mensagem. Tente novamente.");
     }
   };
 
@@ -241,7 +218,7 @@ export default function Orcamentos() {
             <p><strong>Status:</strong> ${getStatusLabel(orcamento.status)}</p>
             <div class="details">
               <h3>Itens</h3>
-               <table>
+              <table>
                 <thead>
                   <tr>
                     <th>Descrição</th>

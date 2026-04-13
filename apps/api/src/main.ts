@@ -6,7 +6,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
-import { json, urlencoded } from 'express'; // 👈 importe os middlewares
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   process.on('unhandledRejection', (reason) => {
@@ -24,12 +24,11 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
-  // ================= AUMENTAR LIMITE DE PAYLOAD =================
-  // Permite até 10MB para JSON e URL-encoded
+  // Aumentar limite de payload (10MB)
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
-  // Helmet com configurações adequadas para CORS
+  // Helmet com configurações amigáveis para CORS
   app.use(
     helmet({
       crossOriginResourcePolicy: false,
@@ -38,7 +37,7 @@ async function bootstrap() {
     }),
   );
 
-  // ================= CONFIGURAÇÃO CORS CORRIGIDA =================
+  // ================= CONFIGURAÇÃO CORS =================
   const defaultOrigins = [
     'https://www.mecpro.tec.br',
     'https://mecpro.tec.br',
@@ -88,11 +87,12 @@ async function bootstrap() {
     optionsSuccessStatus: 200,
   });
 
+  // 🔧 VALIDAÇÃO CORRIGIDA – permite campos extras (evita 400)
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
+      whitelist: true,           // remove campos não declarados (não bloqueia)
+      forbidNonWhitelisted: false, // ← NÃO BLOQUEIA CAMPOS EXTRAS
+      transform: true,           // converte tipos automaticamente
     }),
   );
 

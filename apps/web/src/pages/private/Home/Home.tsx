@@ -18,16 +18,18 @@ export default function Home() {
   const atualizarNotificacoes = async () => {
     try {
       const lista = await getNotifications();
-      const total = lista.filter(n => !n.read).length;
+      // ✅ Garante que lista é array antes de usar filter
+      const total = Array.isArray(lista) ? lista.filter((n) => !n.read).length : 0;
       setNaoLidas(total);
     } catch (error) {
       console.error("Erro ao carregar notificações", error);
+      setNaoLidas(0);
     }
   };
 
   useEffect(() => {
     atualizarNotificacoes();
-    const interval = setInterval(atualizarNotificacoes, 30000); // ✅ atualiza a cada 30 segundos
+    const interval = setInterval(atualizarNotificacoes, 30000);
     return () => clearInterval(interval);
   }, []);
 

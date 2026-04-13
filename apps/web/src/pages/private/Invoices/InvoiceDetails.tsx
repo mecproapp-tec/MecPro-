@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useWhatsApp } from '../../../hooks/useWhatsApp';
+import { sendInvoiceWhatsApp } from '../../../services/invoices';
 
 interface Invoice {
   id: number;
@@ -16,13 +16,29 @@ interface InvoiceDetailsProps {
 }
 
 export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice }) => {
-  const { enviarWhatsApp } = useWhatsApp();
   const [sending, setSending] = useState(false);
 
   const handleSend = async () => {
+    if (!invoice.client.phone) {
+      alert('Cliente não possui telefone cadastrado.');
+      return;
+    }
+
     setSending(true);
-    await enviarWhatsApp('invoice', invoice.id);
-    setSending(false);
+    try {
+      const result = await sendInvoiceWhatsApp(invoice.id, invoice.client.phone);
+      if (result.success && result.whatsappUrl) {
+        // Abre o WhatsApp em nova aba
+        window.open(result.whatsappUrl, '_blank');
+      } else {
+        alert(result.message || 'Erro ao enviar. Tente novamente.');
+      }
+    } catch (error: any) {
+      console.error(error);
+      alert(error.response?.data?.message || 'Erro ao enviar WhatsApp. Verifique o telefone do cliente.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -34,6 +50,15 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice }) => {
       <button
         onClick={handleSend}
         disabled={sending || !invoice.client.phone}
+        style={{
+          padding: '8px 16px',
+          backgroundColor: '#25D366',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: sending ? 'not-allowed' : 'pointer',
+          opacity: sending ? 0.6 : 1,
+        }}
       >
         {sending ? 'Enviando...' : 'Enviar via WhatsApp'}
       </button>

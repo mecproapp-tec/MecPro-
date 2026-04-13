@@ -1,8 +1,9 @@
+// apps/web/src/pages/private/Agenda/VerAgendamento.tsx
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getAppointmentById } from '../../../services/appointments';
-import { FiArrowLeft, FiClock, FiCalendar, FiFileText } from 'react-icons/fi';
+import { getAppointmentById, type Appointment } from '../../../services/appointments';
+import { FiArrowLeft, FiClock, FiCalendar, FiFileText, FiUser } from 'react-icons/fi';
 
 const VerAgendamento: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -12,7 +13,7 @@ const VerAgendamento: React.FC = () => {
     data: appointment,
     isLoading,
     error,
-  } = useQuery({
+  } = useQuery<Appointment>({
     queryKey: ['appointment', id],
     queryFn: () => getAppointmentById(Number(id)),
     enabled: !!id,
@@ -59,6 +60,16 @@ const VerAgendamento: React.FC = () => {
         </div>
 
         <div style={styles.card}>
+          <div style={styles.infoRow}>
+            <FiUser size={20} style={styles.icon} />
+            <div>
+              <div style={styles.label}>Cliente</div>
+              <div style={styles.value}>
+                {appointment.client?.name || `Cliente ID: ${appointment.clientId}`}
+              </div>
+            </div>
+          </div>
+
           <div style={styles.infoRow}>
             <FiCalendar size={20} style={styles.icon} />
             <div>

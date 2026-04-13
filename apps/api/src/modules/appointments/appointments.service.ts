@@ -1,158 +1,91 @@
-import dayjs = require('dayjs');
-import utc = require('dayjs/plugin/utc');
-import timezone = require('dayjs/plugin/timezone');
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
-
+// apps/api/src/modules/appointments/appointments.service.ts
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
-const BRAZIL_TZ = 'America/Sao_Paulo';
-
 @Injectable()
 export class AppointmentsService {
+  private readonly logger = new Logger(AppointmentsService.name);
+
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Remove qualquer offset de fuso horário da string (ex: -03:00, Z, +01:00)
-   */
-  private cleanDateString(dateString: string): string {
-    return dateString.replace(/[+-]\d{2}:\d{2}$|Z$/i, '');
-  }
+  async create(tenantId: string, data: { clientId: number; date: string; comment?: string }) {
+    this.logger.log(`Criando agendamento para tenant ${tenantId}, cliente ${data.clientId}`);
 
-  /**
-   * Converte a string recebida (frontend) para UTC, assumindo que ela representa
-   * um horário no fuso do Brasil.
-   */
-  private convertToUTC(dateString: string): Date {
-    const clean = this.cleanDateString(dateString);
-    const brazilTime = dayjs.tz(clean, BRAZIL_TZ);
-    if (!brazilTime.isValid()) {
+    const client = await this.prisma.client.findFirst({
+      where: { id: data.clientId, tenantId },
+    });
+    if (!client) {
+      throw new BadRequestException('Cliente não encontrado ou não pertence ao seu tenant');
+    }
+
+    const appointmentDate = new Date(data.date);
+    if (isNaN(appointmentDate.getTime())) {
       throw new BadRequestException('Data inválida');
     }
-    return brazilTime.utc().toDate();
-  }
 
-  /**
-   * Converte data do banco (UTC) para string no fuso do Brasil.
-   */
-  private convertToBrazil(date: Date): string {
-    return dayjs(date).tz(BRAZIL_TZ).format();
-  }
-
-  /**
-   * Verifica se a data (interpretada no fuso do Brasil) é futura.
-   */
-  private isFuture(dateString: string): boolean {
-    const clean = this.cleanDateString(dateString);
-    const brazilTime = dayjs.tz(clean, BRAZIL_TZ);
-    const nowBrazil = dayjs().tz(BRAZIL_TZ);
-    return brazilTime.isAfter(nowBrazil);
-  }
-
-  async create(
-    tenantId: string,
-    data: { clientId: number; date: string; comment?: string },
-  ) {
-    if (!this.isFuture(data.date)) {
-      throw new BadRequestException('Não é possível agendar no passado');
-    }
-
-    const appointmentDate = this.convertToUTC(data.date);
-
-    const appointment = await this.prisma.appointment.create({
+    return this.prisma.appointment.create({
       data: {
-        clientId: data.clientId,
         tenantId,
+        clientId: data.clientId,
         date: appointmentDate,
         comment: data.comment,
       },
-      include: { client: true },
+      include: { client: true }, // ✅ inclui dados do cliente
     });
-
-    return {
-      ...appointment,
-      date: this.convertToBrazil(appointment.date),
-    };
   }
 
-  async findAll(tenantId: string, userRole?: string) {
-    const where: any = {};
-    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN') {
-      where.tenantId = tenantId;
-    }
-
-    const appointments = await this.prisma.appointment.findMany({
-      where,
-      include: { client: true },
+  async findAll(tenantId: string) {
+    this.logger.log(`Buscando agendamentos do tenant ${tenantId}`);
+    return this.prisma.appointment.findMany({
+      where: { tenantId },
+      include: { client: true }, // ✅ inclui dados do cliente
       orderBy: { date: 'desc' },
     });
-
-    return appointments.map((app) => ({
-      ...app,
-      date: this.convertToBrazil(app.date),
-    }));
   }
 
-  async findOne(id: number, tenantId: string, userRole?: string) {
-    const where: any = { id };
-    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN') {
-      where.tenantId = tenantId;
-    }
-
+  async findOne(id: number, tenantId: string) {
     const appointment = await this.prisma.appointment.findFirst({
-      where,
-      include: { client: true },
+      where: { id, tenantId },
+      include: { client: true }, // ✅ ESSENCIAL para o frontend exibir o nome
     });
-
     if (!appointment) {
       throw new NotFoundException('Agendamento não encontrado');
     }
-
-    return {
-      ...appointment,
-      date: this.convertToBrazil(appointment.date),
-    };
+    return appointment;
   }
 
-  async update(
-    id: number,
-    tenantId: string,
-    data: { clientId: number; date: string; comment?: string },
-    userRole?: string,
-  ) {
-    await this.findOne(id, tenantId, userRole);
+  async update(id: number, tenantId: string, data: { clientId?: number; date?: string; comment?: string }) {
+    await this.findOne(id, tenantId);
 
-    if (!this.isFuture(data.date)) {
-      throw new BadRequestException('Não é possível agendar no passado');
+    if (data.clientId) {
+      const client = await this.prisma.client.findFirst({
+        where: { id: data.clientId, tenantId },
+      });
+      if (!client) {
+        throw new BadRequestException('Cliente não encontrado ou não pertence ao seu tenant');
+      }
     }
 
-    const appointmentDate = this.convertToUTC(data.date);
+    const updateData: any = {};
+    if (data.clientId !== undefined) updateData.clientId = data.clientId;
+    if (data.date !== undefined) updateData.date = new Date(data.date);
+    if (data.comment !== undefined) updateData.comment = data.comment;
 
-    const updated = await this.prisma.appointment.update({
+    return this.prisma.appointment.update({
       where: { id },
-      data: {
-        clientId: data.clientId,
-        date: appointmentDate,
-        comment: data.comment,
-      },
+      data: updateData,
       include: { client: true },
     });
-
-    return {
-      ...updated,
-      date: this.convertToBrazil(updated.date),
-    };
   }
 
-  async remove(id: number, tenantId: string, userRole?: string) {
-    await this.findOne(id, tenantId, userRole);
+  async remove(id: number, tenantId: string) {
+    await this.findOne(id, tenantId);
     await this.prisma.appointment.delete({ where: { id } });
-    return { message: 'Agendamento removido com sucesso' };
+    return { success: true };
   }
 }

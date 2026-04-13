@@ -1,10 +1,13 @@
+// apps/web/src/services/api.ts
 import axios from "axios";
 
+// 🔥 CORREÇÃO: Remove o /api da baseURL (o backend decide se usa prefixo)
 const baseUrl =
   import.meta.env.VITE_API_URL ??
   (import.meta.env.PROD
-    ? "https://api.mecpro.tec.br/api"
-    : "http://localhost:3000/api");
+    ? "https://api.mecpro.tec.br"      // ← SEM /api
+    : "http://localhost:3000");        // ← SEM /api
+
 const API_URL = baseUrl.replace(/\/$/, "");
 
 const api = axios.create({
@@ -23,8 +26,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Interceptor de resposta: NÃO remove token NÃO redireciona
-// Apenas loga e rejeita a promise
+// Interceptor de resposta
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -33,19 +35,18 @@ api.interceptors.response.use(
     } else {
       console.error("❌ Erro de rede:", error.message);
     }
-    // Não remove token nem redireciona. Deixe o componente decidir.
     return Promise.reject(error);
   }
 );
 
 export const login = async (data: { email: string; password: string }) => {
-  const response = await api.post("/auth/login", data);
+  const response = await api.post("/api/auth/login", data);
   return response.data;
 };
 
 export const logout = async () => {
   try {
-    await api.post("/auth/logout");
+    await api.post("/api/auth/logout");
   } catch (e) {}
   localStorage.removeItem("token");
   localStorage.removeItem("user");
@@ -53,13 +54,18 @@ export const logout = async () => {
 };
 
 export const registerTenant = async (data: any) => {
-  const response = await api.post("/auth/register-tenant", data);
+  const response = await api.post("/api/auth/register-tenant", data);
   return response.data;
 };
 
-export const sendWhatsApp = async (tipo: "invoice" | "estimate", id: number) => {
-  const response = await api.post(`/${tipo}s/${id}/send-whatsapp`);
-  return response.data;
+// 🔥 CORREÇÃO: Agora aceita phoneNumber opcional e envia no corpo
+export const sendWhatsApp = async (
+  tipo: "invoice" | "estimate",
+  id: number,
+  phoneNumber?: string
+) => {
+  const response = await api.post(`/api/${tipo}s/${id}/send-whatsapp`, { phoneNumber });
+  return response.data; // { success, whatsappUrl, message }
 };
 
 export { api };

@@ -1,36 +1,34 @@
+// apps/api/src/modules/public-share/public-share.service.ts
 import {
   Injectable,
   NotFoundException,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
-import { PrismaService } from 'src/shared/prisma/prisma.service';
-import { randomUUID } from 'crypto';
+import { PrismaService } from '../../shared/prisma/prisma.service';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class PublicShareService {
   constructor(private prisma: PrismaService) {}
 
   // =========================
-  // CREATE SHARE
+  // CREATE SHARE (CORRIGIDO)
   // =========================
   async create({
     tenantId,
     type,
     resourceId,
-    pdfUrl,
     expiresInDays = 7,
   }: {
     tenantId: string;
     type: 'ESTIMATE' | 'INVOICE';
     resourceId: number;
-    pdfUrl: string;
     expiresInDays?: number;
   }) {
-    const token = randomUUID();
+    const token = randomBytes(32).toString('hex');
 
-    const expiresAt = new Date(
-      Date.now() + expiresInDays * 86400000,
-    );
+    const expiresAt = new Date(Date.now() + expiresInDays * 86400000);
 
     return this.prisma.publicShare.create({
       data: {
@@ -38,8 +36,8 @@ export class PublicShareService {
         tenantId,
         type,
         resourceId,
-        pdfUrl,
         expiresAt,
+        // pdfUrl é opcional no schema, pode ficar null
       },
     });
   }
@@ -53,7 +51,7 @@ export class PublicShareService {
     });
 
     if (!share) {
-      throw new NotFoundException('Link inválido');
+      throw new NotFoundException('Link inválido ou expirado');
     }
 
     if (share.expiresAt && new Date() > share.expiresAt) {
@@ -83,10 +81,29 @@ export class PublicShareService {
         throw new NotFoundException('Orçamento não encontrado');
       }
 
+      // Buscar PDF do orçamento se existir
+      let pdfUrl = share.pdfUrl;
+      if (!pdfUrl && estimate.pdfUrl) {
+        pdfUrl = estimate.pdfUrl;
+      }
+
       return {
         type: 'ESTIMATE',
-        pdfUrl: share.pdfUrl,
-        data: estimate,
+        pdfUrl,
+        data: {
+          id: estimate.id,
+          total: estimate.total,
+          date: estimate.date,
+          status: estimate.status,
+          client: estimate.client,
+          items: estimate.items,
+          tenant: {
+            name: estimate.tenant?.name,
+            documentNumber: estimate.tenant?.documentNumber,
+            phone: estimate.tenant?.phone,
+            email: estimate.tenant?.email,
+          },
+        },
       };
     }
 
@@ -104,23 +121,42 @@ export class PublicShareService {
         throw new NotFoundException('Fatura não encontrada');
       }
 
+      let pdfUrl = share.pdfUrl;
+      if (!pdfUrl && invoice.pdfUrl) {
+        pdfUrl = invoice.pdfUrl;
+      }
+
       return {
         type: 'INVOICE',
-        pdfUrl: share.pdfUrl,
-        data: invoice,
+        pdfUrl,
+        data: {
+          id: invoice.id,
+          number: invoice.number,
+          total: invoice.total,
+          status: invoice.status,
+          createdAt: invoice.createdAt,
+          client: invoice.client,
+          items: invoice.items,
+          tenant: {
+            name: invoice.tenant?.name,
+            documentNumber: invoice.tenant?.documentNumber,
+            phone: invoice.tenant?.phone,
+            email: invoice.tenant?.email,
+          },
+        },
       };
     }
 
-    throw new NotFoundException('Tipo inválido');
+    throw new BadRequestException('Tipo de compartilhamento inválido');
   }
 
   // =========================
-  // REGENERAR LINK (opcional)
+  // REGENERAR LINK
   // =========================
   async regenerate(token: string) {
     const share = await this.findByToken(token);
 
-    const newToken = randomUUID();
+    const newToken = randomBytes(32).toString('hex');
 
     return this.prisma.publicShare.update({
       where: { id: share.id },
@@ -132,7 +168,7 @@ export class PublicShareService {
   }
 
   // =========================
-  // DELETE (opcional)
+  // DELETE
   // =========================
   async delete(token: string) {
     const share = await this.findByToken(token);

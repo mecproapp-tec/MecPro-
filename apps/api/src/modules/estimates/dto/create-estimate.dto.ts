@@ -1,24 +1,50 @@
-import { IsInt, IsArray, ValidateNested, IsNotEmpty, Min } from 'class-validator';
+// apps/api/src/modules/estimates/dto/create-estimate.dto.ts
 import { Type } from 'class-transformer';
+import {
+  ValidateNested,
+  IsString,
+  IsNumber,
+  IsNotEmpty,
+  IsArray,
+  IsOptional,
+  IsDateString,
+} from 'class-validator';
 
-export class EstimateItemDto {
+export class CreateEstimateItemDto {
+  @IsString()
   @IsNotEmpty()
   description: string;
 
-  @IsInt()
-  @Min(1)
-  quantity: number;
+  @IsOptional()                    // ✅ TORNA QUANTIDADE OPCIONAL
+  @Type(() => Number)
+  @IsNumber()
+  quantity?: number;
 
-  @IsNotEmpty()
+  @Type(() => Number)
+  @IsNumber()
   price: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  issPercent?: number;
 }
 
 export class CreateEstimateDto {
-  @IsInt()
+  @Type(() => Number)
+  @IsNumber()
   clientId: number;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => EstimateItemDto)
-  items: EstimateItemDto[];
+  @Type(() => CreateEstimateItemDto)
+  items: CreateEstimateItemDto[];
 }

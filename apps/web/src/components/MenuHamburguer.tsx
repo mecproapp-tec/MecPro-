@@ -31,10 +31,11 @@ export default function MenuHamburguer({ onClose }: Props) {
   const carregarNotificacoes = async () => {
     try {
       const lista = await getNotifications();
-      const total = lista.filter(n => !n.read).length;
+      const total = Array.isArray(lista) ? lista.filter(n => !n.read).length : 0;
       setNaoLidas(total);
     } catch (error) {
       console.error("Erro ao carregar notificações", error);
+      setNaoLidas(0);
     }
   };
 
@@ -107,7 +108,7 @@ export default function MenuHamburguer({ onClose }: Props) {
               </div>
 
               {/* Badge notificações */}
-              {item.label === "Notificações" && naoLidas > 0 && (
+              {item.label === "Notifications" && naoLidas > 0 && (
                 <div className="bg-[#00e5ff] text-black text-xs font-bold px-2 py-1 rounded-full">
                   {naoLidas}
                 </div>

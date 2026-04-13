@@ -1,20 +1,16 @@
+// apps/api/src/modules/invoices/invoices.service.ts
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  UnauthorizedException,
   Logger,
+  InternalServerErrorException,
 } from '@nestjs/common';
-
 import { PrismaService } from '../../shared/prisma/prisma.service';
-import { v4 as uuidv4 } from 'uuid';
-import { randomBytes } from 'crypto';
-
-import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { InvoicesPdfService } from './invoices-pdf.service';
 import { StorageService } from '../storage/storage.service';
-
-import { InvoiceStatus, ShareType } from '@prisma/client';
+import { InvoiceStatus } from '@prisma/client';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class InvoicesService {
@@ -22,269 +18,174 @@ export class InvoicesService {
 
   constructor(
     private prisma: PrismaService,
-    private whatsappService: WhatsappService,
     private invoicesPdfService: InvoicesPdfService,
     private storageService: StorageService,
   ) {}
 
-  // ============================
-  // CALCULO
-  // ============================
   private calculate(items: any[]) {
     let total = 0;
-
     const normalized = items.map((item) => {
       const price = Number(item.price) || 0;
       const quantity = Number(item.quantity) || 1;
-      const iss = item.issPercent
-        ? price * (item.issPercent / 100)
-        : 0;
-
-      const itemTotal = (price + iss) * quantity;
-
+      const itemTotal = price * quantity;
       total += itemTotal;
-
       return {
-        description: item.description,
+        description: item.description || '-',
         quantity,
         price,
-        issPercent: item.issPercent,
         total: itemTotal,
       };
     });
-
     return { items: normalized, total };
   }
 
-  // ============================
-  // CREATE
-  // ============================
   async create(tenantId: string, data: any) {
-    if (!data.items?.length) {
-      throw new BadRequestException('Fatura sem itens');
-    }
+    const { clientId, items: inputItems } = data;
+    if (!tenantId) throw new BadRequestException('TenantId não informado');
+    if (!clientId) throw new BadRequestException('Cliente não informado');
+    if (!inputItems?.length) throw new BadRequestException('Fatura sem itens');
 
-    const { items, total } = this.calculate(data.items);
+    const client = await this.prisma.client.findFirst({ where: { id: clientId, tenantId } });
+    if (!client) throw new BadRequestException('Cliente não encontrado');
+
+    const { items, total } = this.calculate(inputItems);
+    const invoiceNumber = `FAT-${Date.now()}`;
 
     const invoice = await this.prisma.invoice.create({
       data: {
-        tenantId,
-        clientId: data.clientId,
-        number: `INV-${uuidv4().slice(0, 8).toUpperCase()}`,
+        tenant: { connect: { id: tenantId } },
+        client: { connect: { id: clientId } },
+        number: invoiceNumber,
         total,
         status: 'PENDING',
         items: { create: items },
       },
-      include: {
-        items: true,
-        client: true,
-        tenant: true,
-      },
+      include: { items: true, client: true, tenant: true },
     });
 
-    // 🔥 GERA PDF AUTOMATICAMENTE
-    await this.generateAndUploadPdf(invoice);
-
+    this.logger.log(`Fatura criada ID: ${invoice.id}`);
+    this.generatePdfInBackground(invoice).catch(err => this.logger.error(err));
     return invoice;
   }
 
-  // ============================
-  // GERAR PDF
-  // ============================
-  async generateAndUploadPdf(invoice: any) {
+  private async generatePdfInBackground(invoice: any) {
     try {
-      const pdfBuffer =
-        await this.invoicesPdfService.generateInvoicePdf(invoice);
-
-      const pdfKey = `${invoice.tenantId}/invoices/${invoice.id}.pdf`;
-
-      const pdfUrl = await this.storageService.uploadPdf(
-        pdfBuffer,
-        pdfKey,
-      );
-
+      const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice);
+      const pdfKey = `${invoice.tenantId}/invoices/${invoice.id}-${Date.now()}.pdf`;
+      const pdfUrl = await this.storageService.uploadPdf(pdfBuffer, pdfKey);
       await this.prisma.invoice.update({
         where: { id: invoice.id },
-        data: {
-          pdfUrl,
-          pdfKey,
-          pdfStatus: 'generated',
-        },
+        data: { pdfUrl, pdfKey, pdfStatus: 'generated', pdfGeneratedAt: new Date() },
       });
-
       this.logger.log(`PDF gerado fatura ${invoice.id}`);
-
-      return pdfUrl;
     } catch (error) {
-      this.logger.error(`Erro PDF fatura ${invoice.id}`, error);
-      return null;
+      this.logger.error(`Erro PDF fatura ${invoice.id}: ${error.message}`);
+      await this.prisma.invoice.update({ where: { id: invoice.id }, data: { pdfStatus: 'failed' } });
     }
   }
 
-  // ============================
-  // LISTAGEM
-  // ============================
-  async findAll(tenantId: string, role?: string) {
-    const where: any = {};
-
-    if (!['ADMIN', 'SUPER_ADMIN'].includes(role || '')) {
-      where.tenantId = tenantId;
+  private async generatePdfAndWait(invoice: any, maxAttempts = 5, delay = 2000) {
+    for (let i = 0; i < maxAttempts; i++) {
+      if (invoice.pdfUrl) return;
+      await this.generatePdfInBackground(invoice);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      const updated = await this.prisma.invoice.findUnique({ where: { id: invoice.id } });
+      if (updated?.pdfUrl) {
+        invoice.pdfUrl = updated.pdfUrl;
+        return;
+      }
     }
-
-    return this.prisma.invoice.findMany({
-      where,
-      include: { client: true, items: true },
-      orderBy: { createdAt: 'desc' },
-    });
+    throw new Error('Falha ao gerar PDF após múltiplas tentativas');
   }
 
-  async findOne(id: number, tenantId: string, role?: string) {
-    const where: any = { id };
+  async findAll(tenantId: string, page = 1, limit = 50) {
+    if (!tenantId) throw new BadRequestException('TenantId inválido');
+    const skip = (page - 1) * limit;
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.invoice.findMany({
+        where: { tenantId },
+        skip,
+        take: limit,
+        include: { client: true, items: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.invoice.count({ where: { tenantId } }),
+    ]);
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
 
-    if (!['ADMIN', 'SUPER_ADMIN'].includes(role || '')) {
-      where.tenantId = tenantId;
-    }
-
+  async findOne(id: number, tenantId: string) {
     const invoice = await this.prisma.invoice.findFirst({
-      where,
-      include: {
-        client: true,
-        items: true,
-        tenant: true,
-      },
+      where: { id, tenantId },
+      include: { client: true, items: true, tenant: true },
     });
-
-    if (!invoice) {
-      throw new NotFoundException('Fatura não encontrada');
-    }
-
+    if (!invoice) throw new NotFoundException('Fatura não encontrada');
     return invoice;
   }
 
-  // ============================
-  // UPDATE / DELETE
-  // ============================
-  async update(id: number, tenantId: string, data: any, role?: string) {
-    await this.findOne(id, tenantId, role);
-
+  async update(id: number, tenantId: string, data: any) {
+    await this.findOne(id, tenantId);
     return this.prisma.invoice.update({
       where: { id },
-      data: {
-        clientId: data.clientId,
-        status: data.status as InvoiceStatus,
-      },
+      data: { clientId: data.clientId, status: data.status as InvoiceStatus },
       include: { client: true, items: true },
     });
   }
 
-  async remove(id: number, tenantId: string, role?: string) {
-    await this.findOne(id, tenantId, role);
-
-    return this.prisma.invoice.delete({
-      where: { id },
-    });
+  async remove(id: number, tenantId: string) {
+    const invoice = await this.findOne(id, tenantId);
+    if (invoice.pdfKey) await this.storageService.deleteFile(invoice.pdfKey).catch(() => {});
+    await this.prisma.invoice.delete({ where: { id } });
+    return { success: true };
   }
 
-  // ============================
-  // SHARE TOKEN
-  // ============================
-  async generateShareToken(id: number) {
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id },
-    });
-
-    if (!invoice) {
-      throw new NotFoundException('Fatura não encontrada');
-    }
-
+  async generateShareLink(invoiceId: number, tenantId: string): Promise<string> {
+    const invoice = await this.findOne(invoiceId, tenantId);
     const token = randomBytes(32).toString('hex');
-
     await this.prisma.publicShare.create({
       data: {
         token,
-        type: ShareType.INVOICE,
-        resourceId: id,
+        type: 'INVOICE',
+        resourceId: invoiceId,
         tenantId: invoice.tenantId,
         expiresAt: new Date(Date.now() + 7 * 86400000),
       },
     });
-
-    return token;
+    const baseUrl = process.env.API_URL || 'http://localhost:3000';
+    return `${baseUrl}/public/invoices/share/${token}`;
   }
 
-  // ============================
-  // 🔥 LINK PUBLICO
-  // ============================
-  async getInvoiceByShareToken(token: string) {
-    const share = await this.prisma.publicShare.findFirst({
-      where: { token },
-    });
-
-    if (!share) {
-      throw new UnauthorizedException('Token inválido');
+  async sendToWhatsApp(id: number, tenantId: string, phoneNumber: string) {
+    let invoice = await this.findOne(id, tenantId);
+    if (!invoice.pdfUrl) {
+      await this.generatePdfAndWait(invoice);
+      invoice = await this.findOne(id, tenantId);
     }
-
-    if (share.expiresAt && new Date() > share.expiresAt) {
-      throw new UnauthorizedException('Token expirado');
+    if (!invoice.pdfUrl) {
+      throw new BadRequestException('PDF ainda não disponível. Tente novamente em alguns instantes.');
     }
-
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id: share.resourceId },
-      include: {
-        client: true,
-        items: true,
-        tenant: true,
-      },
-    });
-
-    if (!invoice) {
-      throw new NotFoundException('Fatura não encontrada');
-    }
-
-    // 🔥 PERFORMANCE
-    if (invoice.pdfUrl) {
-      return { pdfUrl: invoice.pdfUrl };
-    }
-
-    const pdfUrl = await this.generateAndUploadPdf(invoice);
-
-    return { pdfUrl };
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    const message =
+      `📄 *FATURA MECPRO #${invoice.number}*\n\n` +
+      `👤 *Cliente:* ${invoice.client?.name || '-'}\n` +
+      `🚗 *Veículo:* ${invoice.client?.vehicle || '-'}\n` +
+      `💰 *Total:* R$ ${Number(invoice.total).toFixed(2)}\n` +
+      `📅 *Data:* ${new Date(invoice.createdAt).toLocaleDateString('pt-BR')}\n\n` +
+      `📎 *PDF:*\n${invoice.pdfUrl}\n\n` +
+      `---\n` +
+      `MecPro - Sua oficina de confiança`;
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/55${cleanPhone}?text=${encodedMessage}`;
+    this.logger.log(`WhatsApp link: ${whatsappUrl}`);
+    return { success: true, whatsappUrl, message: 'Clique no link para enviar pelo WhatsApp' };
   }
 
-  // ============================
-  // WHATSAPP
-  // ============================
-  async sendViaWhatsApp(id: number) {
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id },
-      include: { client: true, items: true, tenant: true },
-    });
-
-    if (!invoice) throw new NotFoundException('Fatura não encontrada');
-    if (!invoice.client.phone)
-      throw new BadRequestException('Cliente sem telefone');
-
-    const baseUrl =
-      (process.env.API_URL || 'https://api.mecpro.tec.br').replace(/\/$/, '');
-
-    const token = await this.generateShareToken(invoice.id);
-
-    const publicUrl = `${baseUrl}/public/invoices/share/${token}`;
-
-    const message = `Olá ${invoice.client.name}!
-
-📄 Sua fatura está pronta
-
-💰 Total: R$ ${invoice.total.toFixed(2)}
-
-👉 ${publicUrl}`;
-
-    const whatsappLink =
-      this.whatsappService.generateWhatsAppLink(
-        invoice.client.phone,
-        message,
-      );
-
-    return { whatsappLink };
+  async resendPdf(id: number, tenantId: string) {
+    const invoice = await this.findOne(id, tenantId);
+    const pdfBuffer = await this.invoicesPdfService.generateInvoicePdf(invoice);
+    const pdfKey = `${invoice.tenantId}/invoices/${invoice.id}-${Date.now()}.pdf`;
+    const pdfUrl = await this.storageService.uploadPdf(pdfBuffer, pdfKey);
+    await this.prisma.invoice.update({ where: { id }, data: { pdfUrl, pdfKey, pdfGeneratedAt: new Date() } });
+    return { success: true, pdfUrl };
   }
 }

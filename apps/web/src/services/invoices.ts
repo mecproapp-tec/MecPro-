@@ -41,12 +41,12 @@ export interface CreateInvoiceData {
   status?: "PENDING" | "PAID" | "CANCELED";
 }
 
-export const getInvoices = async (): Promise<Invoice[]> => {
+export const getInvoices = async (page = 1, limit = 50): Promise<{ data: Invoice[]; total: number; page: number; limit: number; totalPages: number }> => {
   try {
-    const response = await api.get("/invoices");
+    const response = await api.get(`/invoices?page=${page}&limit=${limit}`);
     return response.data;
   } catch (error: any) {
-    if (error.response?.status === 404) return [];
+    if (error.response?.status === 404) return { data: [], total: 0, page: 1, limit, totalPages: 0 };
     throw error;
   }
 };
@@ -78,16 +78,17 @@ export function calculateTotalWithIss(items: InvoiceItem[]): number {
   }, 0);
 }
 
-
-// 📲 Enviar fatura via WhatsApp
-export const sendInvoiceWhatsApp = async (id: number): Promise<{
-  whatsappLink?: string;
+// 📲 Enviar fatura via WhatsApp (com phoneNumber opcional)
+export const sendInvoiceWhatsApp = async (
+  id: number,
+  phoneNumber?: string
+): Promise<{
+  whatsappUrl?: string;
   message: string;
-  pdfUrl?: string;
-  queued?: boolean;
+  success: boolean;
 }> => {
-  const response = await api.post(`/invoices/${id}/send-whatsapp`);
-  return response.data;
+  const response = await api.post(`/invoices/${id}/send-whatsapp`, { phoneNumber });
+  return response.data; // { success, whatsappUrl, message }
 };
 
 // 🔗 Gerar token de compartilhamento
@@ -102,12 +103,10 @@ export const getInvoiceByToken = async (token: string): Promise<Invoice> => {
   return response.data;
 };
 
-
 // 🔗 Gerar link público correto (PRODUÇÃO)
 export const getInvoicePublicLink = (token: string): string => {
   const base =
     import.meta.env.VITE_API_URL?.replace(/\/api$/, "") ||
     "https://api.mecpro.tec.br/api";
-
   return `${base}/api/public/invoices/share/${token}`;
 };

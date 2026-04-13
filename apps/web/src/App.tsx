@@ -20,7 +20,7 @@ import OficinaConfig from "./pages/private/Configuracoes/Oficina";
 import PrivateRoute from "./routes/PrivateRoute";
 import FAQ from "./pages/private/FAQ/FAQ";
 import Configuracoes from "./pages/private/Configuracoes/Configuracoes";
-import { ErrorBoundary } from './components/ErrorBoundary';
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 export default function App() {
   return (
