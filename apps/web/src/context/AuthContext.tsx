@@ -25,23 +25,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem("token");
     const storedUser = localStorage.getItem("user");
+
     if (token && storedUser) {
       try {
         setUser(JSON.parse(storedUser));
-      } catch (e) {
+      } catch {
         localStorage.removeItem("user");
       }
     }
+
     setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
     const response = await api.post("/auth/login", { email, password });
-    const { accessToken, user } = response.data;
-    if (!accessToken) throw new Error("Token não recebido da API");
+
+    // 🔥 CORREÇÃO AQUI
+    const { access_token, user } = response.data;
+
+    if (!access_token) throw new Error("Token não recebido da API");
     if (!user) throw new Error("Dados do usuário não recebidos");
-    localStorage.setItem("token", accessToken);
+
+    localStorage.setItem("token", access_token);
     localStorage.setItem("user", JSON.stringify(user));
+
     setUser(user);
   };
 
@@ -49,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
+
     api.post("/auth/logout").catch(() => {});
   };
 
