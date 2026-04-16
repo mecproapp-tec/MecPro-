@@ -1,11 +1,11 @@
-// apps/api/src/modules/public-share/public-share.module.ts
 import { Module } from '@nestjs/common';
 import { PublicShareService } from './public-share.service';
 import { PublicShareController } from './public-share.controller';
-import { PrismaService } from '../../shared/prisma/prisma.service';
+import { PrismaModule } from '../../shared/prisma/prisma.module';
 
 @Module({
-  providers: [PublicShareService, PrismaService],
+  imports: [PrismaModule],
+  providers: [PublicShareService],
   controllers: [PublicShareController],
   exports: [PublicShareService],
 })

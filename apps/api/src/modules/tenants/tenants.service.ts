@@ -1,3 +1,4 @@
+// src/modules/tenants/tenants.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
@@ -45,7 +46,7 @@ export class TenantsService {
         updatedAt: true,
         paymentStatus: true,
         subscriptionId: true,
-        users: {
+        users: {                              // CORRIGIDO: User -> users (relação no schema)
           select: {
             id: true,
             name: true,
@@ -54,7 +55,7 @@ export class TenantsService {
             createdAt: true,
           },
         },
-        subscriptions: {
+        subscriptions: {                      // CORRIGIDO: Subscription -> subscriptions (relação no schema)
           select: {
             id: true,
             planName: true,
@@ -75,7 +76,6 @@ export class TenantsService {
   }
 
   async update(id: string, data: any) {
-    // Mapeia os campos do frontend para os campos do Prisma
     const updateData: any = {};
 
     if (data.nome !== undefined) updateData.name = data.nome;
@@ -84,14 +84,11 @@ export class TenantsService {
     if (data.telefone !== undefined) updateData.phone = data.telefone;
     if (data.logo !== undefined) updateData.logoUrl = data.logo;
 
-    // Combina endereço e número
     if (data.endereco !== undefined || data.numero !== undefined) {
       const endereco = data.endereco || '';
       const numero = data.numero || '';
       updateData.address = `${endereco} ${numero}`.trim();
     }
-
-    // Se houver outros campos que precisam ser salvos diretamente, adicione aqui
 
     return this.prisma.tenant.update({
       where: { id },

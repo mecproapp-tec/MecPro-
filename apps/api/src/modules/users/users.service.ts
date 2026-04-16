@@ -1,3 +1,4 @@
+// src/modules/users/users.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';

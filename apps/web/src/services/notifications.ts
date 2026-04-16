@@ -1,5 +1,4 @@
-// apps/web/src/services/notifications.ts
-import api from './api';
+import api from "./api";
 
 export interface Notification {
   id: number;
@@ -7,24 +6,15 @@ export interface Notification {
   message: string;
   read: boolean;
   createdAt: string;
+  appointmentId?: number;
 }
 
 export const getNotifications = async (): Promise<Notification[]> => {
-  try {
-    const response = await api.get('/notifications');
-    // Garante que retorna um array
-    if (Array.isArray(response.data)) {
-      return response.data;
-    }
-    if (response.data && Array.isArray(response.data.data)) {
-      return response.data.data;
-    }
-    console.warn('Resposta inesperada de notificações:', response.data);
-    return [];
-  } catch (error) {
-    console.error('Erro ao carregar notificações', error);
-    return [];
-  }
+  const response = await api.get("/notifications");
+  if (Array.isArray(response.data)) return response.data;
+  if (response.data?.data && Array.isArray(response.data.data)) return response.data.data;
+  if (response.data?.notifications && Array.isArray(response.data.notifications)) return response.data.notifications;
+  return [];
 };
 
 export const markAsRead = async (id: number): Promise<void> => {
@@ -32,5 +22,5 @@ export const markAsRead = async (id: number): Promise<void> => {
 };
 
 export const markAllAsRead = async (): Promise<void> => {
-  await api.patch('/notifications/read-all');
+  await api.patch("/notifications/read-all");
 };

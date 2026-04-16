@@ -1,12 +1,38 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiTrash2, FiPlus, FiArrowLeft, FiFileText, FiMessageCircle, FiEye } from "react-icons/fi";
-import { getInvoices, deleteInvoice, updateInvoice, calculateTotalWithIss } from "../../../services/invoices";
-import type { Invoice } from "../../../services/invoices";
+import {
+  FiTrash2,
+  FiPlus,
+  FiArrowLeft,
+  FiFileText,
+  FiMessageCircle,
+  FiEye,
+} from "react-icons/fi";
+import toast from "react-hot-toast";
+import { getInvoices, deleteInvoice, updateInvoice, type Invoice } from "../../../services/invoices";
 import { getClientById, getVehicleDisplay, type Client } from "../../../services/clients";
 import api from "../../../services/api";
 
 type FilterType = "todos" | "PENDING" | "PAID" | "CANCELED";
+
+const displayStatusMap: Record<string, string> = {
+  PENDING: "Pendente",
+  PAID: "Paga",
+  CANCELED: "Cancelada",
+};
+
+function getStatusLabel(status: string): string {
+  return displayStatusMap[status] || status;
+}
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case "PAID": return "#28a745";
+    case "PENDING": return "#ffc107";
+    case "CANCELED": return "#dc3545";
+    default: return "#6c757d";
+  }
+}
 
 export default function Faturas() {
   const navigate = useNavigate();
@@ -15,31 +41,47 @@ export default function Faturas() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    carregarDados();
-  }, []);
-
   const carregarDados = async () => {
     setLoading(true);
     try {
-      const invoicesData = await getInvoices();
-      setFaturas(invoicesData);
-      await carregarClientesFaltantes(invoicesData);
+      const response = await getInvoices();
+      let faturasArray: Invoice[] = [];
+      if (Array.isArray(response)) {
+        faturasArray = response;
+      } else if (response && typeof response === 'object') {
+        if (Array.isArray(response.data)) faturasArray = response.data;
+        else if (Array.isArray(response.invoices)) faturasArray = response.invoices;
+        else if (Array.isArray(response.items)) faturasArray = response.items;
+        else if (Array.isArray(response.data?.data)) faturasArray = response.data.data;
+        else faturasArray = [];
+      }
+
+      const convertedFaturas = faturasArray.map(f => ({
+        ...f,
+        total: typeof f.total === 'string' ? parseFloat(f.total) : (f.total || 0),
+        items: (f.items || []).map(item => ({
+          ...item,
+          price: typeof item.price === 'string' ? parseFloat(item.price) : item.price,
+        })),
+      }));
+
+      setFaturas(convertedFaturas);
+      await carregarClientesFaltantes(convertedFaturas);
     } catch (err: any) {
+      console.error("Erro ao carregar:", err);
       setError(err.response?.data?.message || "Erro ao carregar faturas");
+      setFaturas([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const carregarClientesFaltantes = async (invoices: Invoice[]) => {
-    const missingClientIds = invoices
+  const carregarClientesFaltantes = async (faturas: Invoice[]) => {
+    const missingClientIds = faturas
       .filter(inv => !inv.client && typeof inv.clientId === 'number' && inv.clientId > 0)
       .map(inv => inv.clientId)
       .filter((id, index, self) => self.indexOf(id) === index);
-
     if (missingClientIds.length === 0) return;
-
     const clientMap = new Map<number, Client>();
     await Promise.all(
       missingClientIds.map(async (id) => {
@@ -47,11 +89,10 @@ export default function Faturas() {
           const client = await getClientById(id);
           if (client) clientMap.set(id, client);
         } catch (err) {
-          console.warn(`Cliente ${id} não encontrado ou erro ao buscar`);
+          console.warn(`Cliente ${id} não encontrado`);
         }
       })
     );
-
     setFaturas(prev =>
       prev.map(inv => ({
         ...inv,
@@ -59,6 +100,10 @@ export default function Faturas() {
       }))
     );
   };
+
+  useEffect(() => {
+    carregarDados();
+  }, []);
 
   const handleExcluir = async (id: number) => {
     const confirmar = confirm("Tem certeza que deseja excluir esta fatura?");
@@ -71,79 +116,87 @@ export default function Faturas() {
     }
   };
 
-  const handleStatusChange = async (fatura: Invoice, novoStatus: string) => {
+  const handleStatusChange = async (fatura: Invoice, novoStatus: "PENDING" | "PAID" | "CANCELED") => {
     if (!fatura.clientId || typeof fatura.clientId !== 'number' || fatura.clientId <= 0) {
       alert("Esta fatura não possui um cliente válido. Corrija antes de alterar o status.");
       return;
     }
-
     try {
-      await updateInvoice(fatura.id, {
-        clientId: fatura.clientId,
-        items: fatura.items,
-        status: novoStatus as any,
-      });
-      setFaturas(prev => prev.map(f => f.id === fatura.id ? { ...f, status: novoStatus as any } : f));
+      const payload = { status: novoStatus };
+      await updateInvoice(fatura.id, payload);
+      setFaturas(prev =>
+        prev.map(f => (f.id === fatura.id ? { ...f, status: novoStatus } : f))
+      );
+      toast.success(`Status alterado para ${getStatusLabel(novoStatus)}`);
     } catch (err: any) {
-      alert(err.response?.data?.message || "Erro ao atualizar status");
+      const message = err.response?.data?.message || "Erro ao alterar status";
+      alert(message);
+      console.error("Erro ao atualizar status:", err);
     }
   };
 
-  const handleWhatsApp = async (fatura: Invoice) => {
-    const cliente = fatura.client;
-    if (!cliente || !cliente.phone) {
-      alert("Cliente não encontrado ou sem telefone");
-      return;
-    }
-    let telefone = cliente.phone.replace(/\D/g, "");
-    if (telefone.length === 10 || telefone.length === 11) {
-      telefone = "55" + telefone;
-    }
+  const handleWhatsApp = async (invoice: Invoice) => {
     try {
-      const response = await api.post(`/invoices/${fatura.id}/share`);
-      const { url: link } = response.data;
-      const vehicleDisplay = getVehicleDisplay(cliente);
-      const mensagem = encodeURIComponent(
-        `${link}\n\nOlá ${cliente.name}!\n\nSua fatura ${fatura.number} está disponível ✅\n\n👤 Cliente: ${cliente.name}\n🚗 Veículo: ${vehicleDisplay}\n💰 Total: R$ ${fatura.total.toFixed(2)}\n📌 Status: ${
-          fatura.status === "PAID"
-            ? "Paga"
-            : fatura.status === "PENDING"
-            ? "Pendente"
-            : "Cancelada"
-        }`
-      );
-      window.open(`https://wa.me/${telefone}?text=${mensagem}`, "_blank");
-    } catch (error) {
-      console.error("Erro ao gerar link da fatura:", error);
-      alert("Erro ao gerar link da fatura. Tente novamente.");
+      setLoading(true);
+      let phoneNumber = invoice.client?.phone;
+      if (!phoneNumber) {
+        phoneNumber = prompt('Digite o número do WhatsApp do cliente (com DDD):');
+        if (!phoneNumber) {
+          alert('Número de telefone é obrigatório para enviar via WhatsApp');
+          return;
+        }
+      }
+      const response = await api.post(`/invoices/${invoice.id}/send-whatsapp`, { phoneNumber });
+      if (response.data?.whatsappUrl) {
+        window.open(response.data.whatsappUrl, '_blank');
+        toast.success('Link do WhatsApp gerado com sucesso!');
+      } else {
+        throw new Error('Resposta inválida da API');
+      }
+    } catch (error: any) {
+      console.error('Erro ao enviar via WhatsApp:', error);
+      const fallbackMessage =
+        `*FATURA ${invoice.number}*\n` +
+        `Cliente: ${invoice.client?.name}\n` +
+        `Valor: R$ ${Number(invoice.total).toFixed(2)}\n` +
+        `Status: ${getStatusLabel(invoice.status)}\n\n` +
+        `Acesse o sistema para mais detalhes: ${window.location.origin}/faturas/${invoice.id}`;
+      const phoneNumber = invoice.client?.phone || prompt('Digite o número do WhatsApp:');
+      if (phoneNumber) {
+        const cleanPhone = phoneNumber.replace(/\D/g, '');
+        const whatsappUrl = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(fallbackMessage)}`;
+        window.open(whatsappUrl, '_blank');
+        toast.info('Mensagem alternativa gerada (sem PDF)');
+      } else {
+        toast.error('Não foi possível gerar o link do WhatsApp');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
   const handlePDF = (fatura: Invoice) => {
     const oficina = JSON.parse(localStorage.getItem("oficina") || "{}");
-    const totalComIss = calculateTotalWithIss(fatura.items);
     const cliente = fatura.client;
     const win = window.open("", "_blank");
     if (win) {
       win.document.write(`
         <html>
-          <head>
-            <title>Fatura ${fatura.number}</title>
-            <style>
-              body { font-family: Arial, sans-serif; padding: 20px; }
-              .header { display: flex; align-items: center; gap: 20px; margin-bottom: 30px; border-bottom: 2px solid #00e5ff; padding-bottom: 20px; }
-              .logo { max-width: 100px; max-height: 80px; object-fit: contain; }
-              .info { flex: 1; }
-              .info h2 { margin: 0 0 5px; color: #333; }
-              .info p { margin: 3px 0; color: #666; }
-              .details { margin-top: 20px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-              th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
-              th { background-color: #f2f2f2; }
-              .valor { text-align: right; }
-              .total-row { font-weight: bold; background-color: #f9f9f9; }
-              .total-geral { font-size: 1.2rem; font-weight: bold; margin-top: 20px; text-align: right; }
-            </style>
+          <head><title>Fatura ${fatura.number}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            .header { display: flex; align-items: center; gap: 20px; margin-bottom: 30px; border-bottom: 2px solid #00e5ff; padding-bottom: 20px; }
+            .logo { max-width: 100px; max-height: 80px; object-fit: contain; }
+            .info { flex: 1; }
+            .info h2 { margin: 0 0 5px; color: #333; }
+            .info p { margin: 3px 0; color: #666; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background-color: #f2f2f2; }
+            .valor { text-align: right; }
+            .total-row { font-weight: bold; background-color: #f9f9f9; }
+            .total-geral { font-size: 1.2rem; font-weight: bold; margin-top: 20px; text-align: right; }
+          </style>
           </head>
           <body>
             <div class="header">
@@ -161,51 +214,17 @@ export default function Faturas() {
             <p><strong>Veículo:</strong> ${cliente ? getVehicleDisplay(cliente) : "Não informado"}</p>
             <p><strong>Placa:</strong> ${cliente?.plate || ""}</p>
             <p><strong>Data:</strong> ${new Date(fatura.createdAt).toLocaleDateString("pt-BR")}</p>
-            <p><strong>Status:</strong> ${
-              fatura.status === "PAID"
-                ? "Paga"
-                : fatura.status === "PENDING"
-                ? "Pendente"
-                : "Cancelada"
-            }</p>
-            <div class="details">
-              <h3>Itens</h3>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Descrição</th>
-                    <th class="valor">Qtd</th>
-                    <th class="valor">Preço Unit.</th>
-                    <th class="valor">ISS (%)</th>
-                    <th class="valor">Total c/ ISS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${fatura.items.map(item => {
-                    const iss = item.issPercent ? item.price * (item.issPercent / 100) : 0;
-                    const totalItem = (item.price + iss) * item.quantity;
-                    return `
-                      <tr>
-                        <td>${item.description}</td>
-                        <td class="valor">${item.quantity}</td>
-                        <td class="valor">${item.price.toFixed(2)}</td>
-                        <td class="valor">${item.issPercent ? item.issPercent + '%' : '-'}</td>
-                        <td class="valor">${totalItem.toFixed(2)}</td>
-                      </tr>
-                    `;
-                  }).join("")}
-                </tbody>
-                <tfoot>
-                  <tr class="total-row">
-                    <td colspan="4" style="text-align: right;"><strong>Total Geral</strong></td>
-                    <td class="valor"><strong>${totalComIss.toFixed(2)}</strong></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-            <div class="total-geral">
-              <strong>Total: R$ ${totalComIss.toFixed(2)}</strong>
-            </div>
+            <p><strong>Status:</strong> ${getStatusLabel(fatura.status)}</p>
+            <div class="details"><h3>Itens</h3>
+            <table><thead><tr><th>Descrição</th><th class="valor">Qtd</th><th class="valor">Preço Unit.</th><th class="valor">ISS (%)</th><th class="valor">Total c/ ISS</th></tr></thead>
+            <tbody>${fatura.items.map(item => {
+              const iss = item.issPercent ? item.price * (item.issPercent / 100) : 0;
+              const totalItem = (item.price + iss) * (item.quantity || 1);
+              return `<tr><td>${item.description}</td><td class="valor">${item.quantity || 1}</td><td class="valor">${item.price.toFixed(2)}</td><td class="valor">${item.issPercent ? item.issPercent + '%' : '-'}</td><td class="valor">${totalItem.toFixed(2)}</td></tr>`;
+            }).join("")}</tbody>
+            <tfoot><tr class="total-row"><td colspan="4" style="text-align:right;"><strong>Total Geral</strong></td><td class="valor"><strong>${Number(fatura.total).toFixed(2)}</strong></td></tr></tfoot>
+            </table></div>
+            <div class="total-geral"><strong>Total: R$ ${Number(fatura.total).toFixed(2)}</strong></div>
           </body>
         </html>
       `);
@@ -214,12 +233,8 @@ export default function Faturas() {
     }
   };
 
-  const faturasFiltradas = faturas.filter((f) => {
-    if (filtro === "todos") return true;
-    return f.status === filtro;
-  });
-
-  const totalGeral = faturasFiltradas.reduce((acc, f) => acc + f.total, 0);
+  const faturasFiltradas = faturas.filter((f) => filtro === "todos" ? true : f.status === filtro);
+  const totalGeral = faturasFiltradas.reduce((acc, f) => acc + Number(f.total), 0);
 
   if (loading) {
     return (
@@ -233,6 +248,7 @@ export default function Faturas() {
     return (
       <div style={styles.errorContainer}>
         <div style={styles.error}>{error}</div>
+        <button onClick={carregarDados} style={styles.retryButton}>Tentar novamente</button>
       </div>
     );
   }
@@ -272,6 +288,7 @@ export default function Faturas() {
                 background: filtro === f.key ? "#00e5ff" : "transparent",
                 color: filtro === f.key ? "#000" : "#00e5ff",
                 border: filtro === f.key ? "none" : "1px solid #00e5ff40",
+                boxShadow: filtro === f.key ? "0 4px 12px rgba(0, 229, 255, 0.4)" : "none",
               }}
             >
               {f.label}
@@ -289,7 +306,7 @@ export default function Faturas() {
                   <th style={styles.th}>Veículo</th>
                   <th style={styles.th}>Placa</th>
                   <th style={styles.th}>Data</th>
-                  <th style={styles.th}>Total</th>
+                  <th style={styles.th}>Total (R$)</th>
                   <th style={styles.th}>Status</th>
                   <th style={styles.th}>Ações</th>
                 </tr>
@@ -299,17 +316,17 @@ export default function Faturas() {
                   const cliente = f.client;
                   return (
                     <tr key={f.id} style={{ ...styles.tableRow, background: index % 2 === 0 ? "#0f0f0f" : "#1a1a1a" }}>
-                      <td style={{ ...styles.td, fontWeight: "500", color: "#fff" }}>{f.number}</td>
+                      <td style={{ ...styles.td, fontWeight: "500", color: "#fff" }}>{f.number || f.id}</td>
                       <td style={styles.td}>{cliente?.name || "Cliente não encontrado"}</td>
                       <td style={styles.td}>{cliente ? getVehicleDisplay(cliente) : "Não informado"}</td>
                       <td style={styles.td}>{cliente?.plate || ""}</td>
                       <td style={styles.td}>{new Date(f.createdAt).toLocaleDateString("pt-BR")}</td>
-                      <td style={{ ...styles.td, textAlign: "right", color: "#00e5ff", fontWeight: "600" }}>R$ {f.total.toFixed(2)}</td>
+                      <td style={{ ...styles.td, textAlign: "right", color: "#00e5ff", fontWeight: "600" }}>R$ {Number(f.total).toFixed(2)}</td>
                       <td style={styles.td}>
                         <select
                           value={f.status}
-                          onChange={(e) => handleStatusChange(f, e.target.value)}
-                          style={styles.statusSelect}
+                          onChange={(e) => handleStatusChange(f, e.target.value as "PENDING" | "PAID" | "CANCELED")}
+                          style={{ ...styles.statusSelect, color: getStatusColor(f.status) }}
                         >
                           <option value="PENDING">Pendente</option>
                           <option value="PAID">Paga</option>
@@ -318,32 +335,16 @@ export default function Faturas() {
                       </td>
                       <td style={{ ...styles.td, textAlign: "center" }}>
                         <div style={styles.actions}>
-                          <button
-                            onClick={() => navigate(`/clientes/ver/${f.clientId}`)}
-                            style={styles.actionButton}
-                            title="Ver cliente"
-                          >
+                          <button onClick={() => navigate(`/clientes/ver/${f.clientId}`)} style={styles.actionButton} title="Ver cliente">
                             <FiEye size={16} />
                           </button>
-                          <button
-                            onClick={() => handleExcluir(f.id)}
-                            style={{ ...styles.actionButton, color: "#ff5555", borderColor: "#ff555530" }}
-                            title="Excluir"
-                          >
+                          <button onClick={() => handleExcluir(f.id)} style={{ ...styles.actionButton, color: "#ff5555", borderColor: "#ff555530" }} title="Excluir">
                             <FiTrash2 size={16} />
                           </button>
-                          <button
-                            onClick={() => handlePDF(f)}
-                            style={styles.actionButton}
-                            title="Gerar PDF"
-                          >
+                          <button onClick={() => handlePDF(f)} style={styles.actionButton} title="Gerar PDF">
                             <FiFileText size={16} />
                           </button>
-                          <button
-                            onClick={() => handleWhatsApp(f)}
-                            style={{ ...styles.actionButton, color: "#25D366", borderColor: "#25D36630" }}
-                            title="Enviar WhatsApp"
-                          >
+                          <button onClick={() => handleWhatsApp(f)} style={{ ...styles.actionButton, color: "#25D366", borderColor: "#25D36630" }} title="Enviar WhatsApp">
                             <FiMessageCircle size={16} />
                           </button>
                         </div>
@@ -373,10 +374,7 @@ const styles = {
     color: "#e0e0e0",
     fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
   },
-  innerContainer: {
-    maxWidth: "1280px",
-    margin: "0 auto",
-  },
+  innerContainer: { maxWidth: "1280px", margin: "0 auto" },
   header: {
     display: "flex",
     alignItems: "center",
@@ -385,11 +383,7 @@ const styles = {
     flexWrap: "wrap",
     gap: "20px",
   },
-  headerLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-  },
+  headerLeft: { display: "flex", alignItems: "center", gap: "16px" },
   backButton: {
     background: "#1a1a1a",
     border: "none",
@@ -412,12 +406,9 @@ const styles = {
     WebkitBackgroundClip: "text",
     WebkitTextFillColor: "transparent",
     margin: 0,
+    letterSpacing: "-0.02em",
   },
-  headerRight: {
-    display: "flex",
-    gap: "16px",
-    alignItems: "center",
-  },
+  headerRight: { display: "flex", gap: "16px", alignItems: "center" },
   totalBox: {
     background: "#1a1a1a",
     padding: "12px 24px",
@@ -428,16 +419,14 @@ const styles = {
     border: "1px solid #00e5ff30",
     boxShadow: "0 4px 12px rgba(0, 0, 0, 0.5)",
   },
-  totalValue: {
-    color: "#ffffff",
-    marginLeft: "8px",
-  },
+  totalValue: { color: "#ffffff", marginLeft: "8px" },
   newButton: {
     background: "linear-gradient(135deg, #00e5ff, #0077ff)",
     color: "#000",
     padding: "12px 24px",
     borderRadius: "100px",
     fontWeight: "600",
+    fontSize: "1rem",
     border: "none",
     cursor: "pointer",
     display: "flex",
@@ -446,12 +435,7 @@ const styles = {
     transition: "all 0.2s",
     boxShadow: "0 8px 20px rgba(0, 229, 255, 0.3)",
   },
-  filters: {
-    display: "flex",
-    gap: "12px",
-    marginBottom: "32px",
-    flexWrap: "wrap",
-  },
+  filters: { display: "flex", gap: "12px", marginBottom: "32px", flexWrap: "wrap" },
   filterButton: {
     padding: "10px 24px",
     borderRadius: "100px",
@@ -466,35 +450,14 @@ const styles = {
     overflow: "hidden",
     boxShadow: "0 20px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px #00e5ff20",
   },
-  tableWrapper: {
-    overflowX: "auto",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    minWidth: "900px",
-  },
-  tableHeader: {
-    background: "#1e1e1e",
-    borderBottom: "2px solid #00e5ff30",
-  },
-  th: {
-    padding: "20px 16px",
-    textAlign: "left",
-    fontWeight: "600",
-    color: "#a0a0a0",
-  },
-  tableRow: {
-    borderBottom: "1px solid #2a2a2a",
-    transition: "background 0.2s",
-  },
-  td: {
-    padding: "18px 16px",
-    color: "#b0b0b0",
-  },
+  tableWrapper: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", minWidth: "900px" },
+  tableHeader: { background: "#1e1e1e", borderBottom: "2px solid #00e5ff30" },
+  th: { padding: "20px 16px", textAlign: "left", fontWeight: "600", color: "#a0a0a0" },
+  tableRow: { borderBottom: "1px solid #2a2a2a", transition: "background 0.2s" },
+  td: { padding: "18px 16px", color: "#b0b0b0" },
   statusSelect: {
     background: "#1a1a1a",
-    color: "#00e5ff",
     border: "1px solid #00e5ff40",
     padding: "8px 12px",
     borderRadius: "100px",
@@ -503,11 +466,7 @@ const styles = {
     fontSize: "0.85rem",
     outline: "none",
   },
-  actions: {
-    display: "flex",
-    gap: "12px",
-    justifyContent: "center",
-  },
+  actions: { display: "flex", gap: "12px", justifyContent: "center" },
   actionButton: {
     background: "#1a1a1a",
     border: "1px solid #00e5ff30",
@@ -521,12 +480,7 @@ const styles = {
     transition: "all 0.2s",
     color: "#00e5ff",
   },
-  emptyRow: {
-    padding: "60px 16px",
-    textAlign: "center",
-    color: "#888",
-    fontStyle: "italic",
-  },
+  emptyRow: { padding: "60px 16px", textAlign: "center", color: "#888", fontStyle: "italic" },
   loadingContainer: {
     background: "linear-gradient(145deg, #0a0a0a 0%, #000000 100%)",
     minHeight: "100vh",
@@ -534,19 +488,25 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
   },
-  loading: {
-    color: "#00e5ff",
-    fontSize: "18px",
-  },
+  loading: { color: "#00e5ff", fontSize: "18px" },
   errorContainer: {
     background: "linear-gradient(145deg, #0a0a0a 0%, #000000 100%)",
     minHeight: "100vh",
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
+    gap: "20px",
   },
-  error: {
-    color: "#ff4444",
-    fontSize: "18px",
+  error: { color: "#ff4444", fontSize: "18px" },
+  retryButton: {
+    background: "#00e5ff",
+    color: "#000",
+    border: "none",
+    padding: "12px 24px",
+    borderRadius: "100px",
+    cursor: "pointer",
+    fontWeight: "600",
+    fontSize: "14px",
   },
 };

@@ -1,3 +1,4 @@
+// src/auth/guards/jwt.strategy.ts
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -13,7 +14,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET') || 'SUPER_SECRET_KEY',
+      secretOrKey:
+        configService.get<string>('JWT_SECRET') || 'SUPER_SECRET_KEY',
     });
   }
 
@@ -22,7 +24,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Token inválido');
     }
 
-    // Buscar usuário no banco para garantir que ainda existe
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: {
@@ -37,13 +38,23 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Usuário não encontrado');
     }
 
-    // Retornar os dados do usuário para ficar disponível no request.user
+    const session = await this.prisma.userSession.findFirst({
+      where: {
+        userId: user.id,
+        sessionToken: payload.sessionToken,
+      },
+    });
+
+    if (!session) {
+      throw new UnauthorizedException('Sessão inválida ou expirada');
+    }
+
     return {
       id: user.id,
       email: user.email,
       role: user.role,
       tenantId: user.tenantId,
-      sessionToken: payload.sessionToken, // Se existir no token
+      sessionToken: payload.sessionToken,
     };
   }
 }

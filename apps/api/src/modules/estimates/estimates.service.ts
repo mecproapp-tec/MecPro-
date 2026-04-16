@@ -1,4 +1,3 @@
-// apps/api/src/modules/estimates/estimates.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -9,6 +8,7 @@ import {
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EstimatesPdfService } from './estimates-pdf.service';
 import { StorageService } from '../storage/storage.service';
+import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
 @Injectable()
@@ -22,23 +22,20 @@ export class EstimatesService {
   ) {}
 
   private calculate(items: any[]) {
-    let total = 0;
+    let total = new Prisma.Decimal(0);
     const normalized = items.map((item) => {
-      const price = Number(item.price) || 0;
-      const quantity = Number(item.quantity) || 1;
-      const issPercent = Number(item.issPercent) || 0;
-
-      const subtotal = price * quantity;
-      const tax = subtotal * (issPercent / 100);
-      const itemTotal = subtotal + tax;
-
-      total += itemTotal;
-
+      const price = new Prisma.Decimal(item.price || 0);
+      const quantity = new Prisma.Decimal(item.quantity || 1);
+      const issPercent = new Prisma.Decimal(item.issPercent || 0);
+      const subtotal = price.times(quantity);
+      const tax = subtotal.times(issPercent).dividedBy(100);
+      const itemTotal = subtotal.plus(tax);
+      total = total.plus(itemTotal);
       return {
         description: item.description || '-',
-        quantity,
+        quantity: quantity.toNumber(),
         price,
-        issPercent,
+        issPercent: issPercent.toNumber(),
         total: itemTotal,
       };
     });
@@ -47,8 +44,6 @@ export class EstimatesService {
 
   async create(tenantId: string, data: any) {
     const { clientId, items: inputItems, date } = data;
-
-    this.logger.log(`Criando orçamento para tenant: ${tenantId}, client: ${clientId}`);
 
     if (!tenantId) throw new BadRequestException('TenantId não informado');
     if (!clientId) throw new BadRequestException('Cliente não informado');
@@ -65,8 +60,8 @@ export class EstimatesService {
     try {
       const estimate = await this.prisma.estimate.create({
         data: {
-          tenant: { connect: { id: tenantId } },
-          client: { connect: { id: clientId } },
+          tenantId,
+          clientId,
           total,
           status: 'DRAFT',
           date: estimateDate,
@@ -76,9 +71,6 @@ export class EstimatesService {
       });
 
       this.logger.log(`Orçamento criado com ID: ${estimate.id}`);
-      this.generatePdfInBackground(estimate).catch((err) => {
-        this.logger.error(`Erro em background ao gerar PDF: ${err.message}`);
-      });
       return estimate;
     } catch (error) {
       this.logger.error(`Erro ao criar orçamento: ${error.message}`, error.stack);
@@ -87,37 +79,49 @@ export class EstimatesService {
     }
   }
 
-  private async generatePdfInBackground(estimate: any) {
+  private async generatePdfNow(estimate: any) {
     try {
       const pdfBuffer = await this.estimatesPdfService.generateEstimatePdf(estimate);
-      const pdfKey = `${estimate.tenantId}/estimates/${estimate.id}-${Date.now()}.pdf`;
+      const pdfKey = `${estimate.tenantId}/estimates/${estimate.id}.pdf`;
       const pdfUrl = await this.storageService.uploadPdf(pdfBuffer, pdfKey);
       await this.prisma.estimate.update({
         where: { id: estimate.id },
-        data: { pdfUrl, pdfKey, pdfStatus: 'generated', pdfGeneratedAt: new Date() },
+        data: {
+          pdfUrl,
+          pdfKey,
+          pdfStatus: 'generated',
+          pdfGeneratedAt: new Date(),
+        },
       });
       this.logger.log(`PDF gerado para orçamento ${estimate.id}`);
+      return { pdfUrl, pdfKey };
     } catch (error) {
       this.logger.error(`Erro ao gerar PDF para orçamento ${estimate.id}: ${error.message}`);
-      await this.prisma.estimate.update({ where: { id: estimate.id }, data: { pdfStatus: 'failed' } }).catch(e => this.logger.error(e.message));
+      await this.prisma.estimate.update({
+        where: { id: estimate.id },
+        data: { pdfStatus: 'failed' },
+      }).catch(e => this.logger.error(e.message));
+      throw new BadRequestException('Erro ao gerar PDF. Tente novamente mais tarde.');
     }
   }
 
-  private async generatePdfAndWait(estimate: any, maxAttempts = 5, delay = 2000) {
-    for (let i = 0; i < maxAttempts; i++) {
-      if (estimate.pdfUrl) return;
-      await this.generatePdfInBackground(estimate);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      const updated = await this.prisma.estimate.findUnique({ where: { id: estimate.id } });
-      if (updated?.pdfUrl) {
-        estimate.pdfUrl = updated.pdfUrl;
-        return;
-      }
+  private async ensurePdf(estimateId: number) {
+    const estimate = await this.prisma.estimate.findUnique({
+      where: { id: estimateId },
+    });
+    if (!estimate) throw new NotFoundException('Orçamento não encontrado');
+
+    if (estimate.pdfUrl && estimate.pdfKey) {
+      return { pdfUrl: estimate.pdfUrl, pdfKey: estimate.pdfKey };
     }
-    throw new Error('Falha ao gerar PDF após múltiplas tentativas');
+
+    const fullEstimate = await this.prisma.estimate.findUnique({
+      where: { id: estimateId },
+      include: { client: true, items: true, tenant: true },
+    });
+    return this.generatePdfNow(fullEstimate);
   }
 
-  // 🔥 MÉTODO COM PAGINAÇÃO
   async findAll(tenantId: string, page = 1, limit = 50) {
     if (!tenantId) throw new BadRequestException('TenantId inválido');
     const skip = (page - 1) * limit;
@@ -133,13 +137,7 @@ export class EstimatesService {
       this.prisma.estimate.count({ where: { tenantId } }),
     ]);
 
-    return {
-      data,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async findOne(id: number, tenantId: string) {
@@ -157,7 +155,6 @@ export class EstimatesService {
     if (!estimate) throw new NotFoundException('Orçamento não encontrado');
 
     const { clientId, items: inputItems, date, status } = data;
-    
     const updateData: any = {};
 
     if (clientId !== undefined && clientId !== estimate.clientId) {
@@ -168,30 +165,19 @@ export class EstimatesService {
       updateData.clientId = clientId;
     }
 
-    if (date) {
-      updateData.date = new Date(date);
-    }
+    if (date) updateData.date = new Date(date);
+    if (status) updateData.status = status;
 
-    if (status) {
-      updateData.status = status;
-    }
-
+    let itemsChanged = false;
     if (inputItems && inputItems.length > 0) {
       const { items, total } = this.calculate(inputItems);
-      
-      await this.prisma.estimateItem.deleteMany({
-        where: { estimateId: id },
-      });
-      
-      updateData.items = {
-        create: items,
-      };
+      await this.prisma.estimateItem.deleteMany({ where: { estimateId: id } });
+      updateData.items = { create: items };
       updateData.total = total;
+      itemsChanged = true;
     }
 
-    if (Object.keys(updateData).length === 0) {
-      return estimate;
-    }
+    if (Object.keys(updateData).length === 0) return estimate;
 
     const updatedEstimate = await this.prisma.estimate.update({
       where: { id },
@@ -199,78 +185,88 @@ export class EstimatesService {
       include: { client: true, items: true },
     });
 
+    if (itemsChanged) {
+      await this.prisma.estimate.update({
+        where: { id },
+        data: { pdfUrl: null, pdfKey: null, pdfStatus: 'pending', pdfGeneratedAt: null },
+      });
+    }
+
     return updatedEstimate;
   }
 
   async convertToInvoice(estimateId: number, tenantId: string) {
     const estimate = await this.findOne(estimateId, tenantId);
-    if (estimate.status === 'CONVERTED') {
-      throw new BadRequestException('Orçamento já foi convertido');
-    }
+    if (estimate.status === 'CONVERTED') throw new BadRequestException('Orçamento já foi convertido');
 
-    return this.prisma.$transaction(async (tx) => {
-      const lastInvoice = await tx.invoice.findFirst({
-        where: { tenantId },
-        orderBy: { id: 'desc' },
-      });
-      const nextNumber = lastInvoice ? Number(lastInvoice.number) + 1 : 1;
-      const invoiceNumber = nextNumber.toString().padStart(6, '0');
+    try {
+      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const timestamp = Date.now();
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        let invoiceNumber = `${timestamp}${random}`;
 
-      const invoice = await tx.invoice.create({
-        data: {
-          tenantId,
-          clientId: estimate.clientId,
-          total: estimate.total,
-          status: 'PENDING',
-          number: invoiceNumber,
-          estimateId: estimate.id,
-          items: {
-            create: estimate.items.map(item => ({
-              description: item.description,
-              quantity: item.quantity,
-              price: item.price,
-              total: item.total,
-              issPercent: item.issPercent,
-            })),
+        const existing = await tx.invoice.findUnique({ where: { number: invoiceNumber } });
+        if (existing) {
+          invoiceNumber = `${timestamp}${random}${Math.floor(Math.random() * 100).toString().padStart(2, '0')}`;
+        }
+
+        const invoice = await tx.invoice.create({
+          data: {
+            tenantId,
+            clientId: estimate.clientId,
+            total: estimate.total,
+            status: 'PENDING',
+            number: invoiceNumber,
+            estimateId: estimate.id,
+            items: {
+              create: estimate.items.map(item => ({
+                description: item.description,
+                quantity: item.quantity,
+                price: item.price,
+                total: item.total,
+                issPercent: item.issPercent,
+              })),
+            },
           },
-        },
-        include: { items: true, client: true },
-      });
+          include: { items: true, client: true },
+        });
 
-      await tx.estimate.update({
-        where: { id: estimateId },
-        data: { status: 'CONVERTED' },
-      });
+        await tx.estimate.update({
+          where: { id: estimateId },
+          data: { status: 'CONVERTED' },
+        });
 
-      return invoice;
-    });
+        this.logger.log(`✅ Orçamento ${estimateId} convertido para fatura ${invoice.number}`);
+        return invoice;
+      });
+    } catch (error) {
+      this.logger.error(`Erro na conversão: ${error.message}`);
+      if (error.code === 'P2002') {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        return this.convertToInvoice(estimateId, tenantId);
+      }
+      throw error;
+    }
   }
 
   async remove(id: number, tenantId: string) {
     const estimate = await this.findOne(id, tenantId);
     if (estimate.pdfKey) {
-      await this.storageService.deleteFile(estimate.pdfKey).catch((err) => {
-        this.logger.warn(`Erro ao deletar PDF no storage: ${err.message}`);
-      });
+      await this.storageService.deleteFile(estimate.pdfKey).catch(() => {});
     }
     await this.prisma.estimate.delete({ where: { id } });
     return { success: true };
   }
 
-  async generateShareLink(estimateId: number, tenantId: string): Promise<string> {
+  async generateShareLink(estimateId: number, tenantId: string): Promise<{ shareUrl: string }> {
     const estimate = await this.findOne(estimateId, tenantId);
-    
+    await this.ensurePdf(estimateId);
+
     const existingShare = await this.prisma.publicShare.findFirst({
-      where: {
-        resourceId: estimateId,
-        type: 'ESTIMATE',
-        tenantId,
-        expiresAt: { gt: new Date() },
-      },
+      where: { resourceId: estimateId, type: 'ESTIMATE', tenantId, expiresAt: { gt: new Date() } },
     });
 
     let token: string;
-    
     if (existingShare) {
       token = existingShare.token;
     } else {
@@ -285,48 +281,27 @@ export class EstimatesService {
       });
       token = newShare.token;
     }
-    
-    const baseUrl = process.env.API_URL || 'http://localhost:3000';
+
+    const baseUrl = process.env.API_URL || 'http://localhost:3000/api';
     const cleanBaseUrl = baseUrl.replace(/\/api$/, '');
-    const fullUrl = `${cleanBaseUrl}/api/public/estimates/share/${token}`;
-    
-    this.logger.log(`Link compartilhável gerado: ${fullUrl}`);
-    return fullUrl;
+    const shareUrl = `${cleanBaseUrl}/public/estimates/share/${token}`;
+    return { shareUrl };
   }
 
-  // 🔥 WhatsApp com espera do PDF e número opcional
   async sendToWhatsApp(id: number, tenantId: string, phoneNumber: string) {
-    let estimate = await this.findOne(id, tenantId);
-    
-    // Garante que o PDF exista antes de enviar
-    if (!estimate.pdfUrl) {
-      await this.generatePdfAndWait(estimate);
-      estimate = await this.findOne(id, tenantId);
-    }
-    
-    if (!estimate.pdfUrl) {
-      throw new BadRequestException('PDF ainda não disponível. Tente novamente em alguns instantes.');
-    }
-    
+    const estimate = await this.findOne(id, tenantId);
+    await this.ensurePdf(id);
+    const { shareUrl } = await this.generateShareLink(id, tenantId);
+
     const cleanPhone = phoneNumber.replace(/\D/g, '');
-    const message = `📄 *ORÇAMENTO MECPRO #${estimate.id}*\n\n` +
-                    `👤 *Cliente:* ${estimate.client?.name || '-'}\n` +
-                    `🚗 *Veículo:* ${estimate.client?.vehicle || '-'}\n` +
-                    `💰 *Total:* R$ ${Number(estimate.total).toFixed(2)}\n\n` +
-                    `📎 *PDF:*\n${estimate.pdfUrl}\n\n` +
-                    `MecPro - Sua oficina de confiança`;
-    
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://wa.me/55${cleanPhone}?text=${encodedMessage}`;
+    const message = `📄 *ORÇAMENTO MECPRO #${estimate.id}*\n👤 *Cliente:* ${estimate.client?.name || '-'}\n🚗 *Veículo:* ${estimate.client?.vehicle || '-'}\n💰 *Total:* R$ ${Number(estimate.total).toFixed(2)}\n🔗 *Link:* ${shareUrl}\nMecPro - Sua oficina de confiança`;
+    const whatsappUrl = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`;
     return { success: true, whatsappUrl };
   }
 
   async resendPdf(id: number, tenantId: string) {
-    const estimate = await this.findOne(id, tenantId);
-    const pdfBuffer = await this.estimatesPdfService.generateEstimatePdf(estimate);
-    const pdfKey = `${estimate.tenantId}/estimates/${estimate.id}-${Date.now()}.pdf`;
-    const pdfUrl = await this.storageService.uploadPdf(pdfBuffer, pdfKey);
-    await this.prisma.estimate.update({ where: { id }, data: { pdfUrl, pdfKey, pdfGeneratedAt: new Date() } });
-    return { success: true, pdfUrl };
+    await this.ensurePdf(id);
+    const estimate = await this.prisma.estimate.findUnique({ where: { id } });
+    return { success: true, pdfUrl: estimate?.pdfUrl };
   }
 }

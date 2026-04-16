@@ -1,3 +1,4 @@
+// src/modules/contact/contact.service.ts
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -40,7 +41,7 @@ export class ContactService {
           reply: true,
           createdAt: true,
           updatedAt: true,
-          tenant: {
+          tenant: {                        // CORRIGIDO: Tenant -> tenant
             select: {
               id: true,
               name: true,
@@ -70,7 +71,7 @@ export class ContactService {
           reply: true,
           createdAt: true,
           updatedAt: true,
-          tenant: {
+          tenant: {                        // CORRIGIDO: Tenant -> tenant
             select: {
               id: true,
               name: true,
@@ -110,7 +111,7 @@ export class ContactService {
           reply: true,
           createdAt: true,
           updatedAt: true,
-          tenant: {
+          tenant: {                        // CORRIGIDO: Tenant -> tenant
             select: { id: true, name: true, email: true, phone: true },
           },
         },

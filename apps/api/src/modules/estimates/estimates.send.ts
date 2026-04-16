@@ -16,8 +16,7 @@ export class EstimatesSendService {
       host: emailHost,
       port: emailPort,
       secure: emailPort === 465, // true para porta 465, false para as demais
-      auth: {
-        user: emailUser,
+      auth: { users: emailUser,
         pass: emailPass,
       },
     });
@@ -36,7 +35,7 @@ export class EstimatesSendService {
       subject: `Orçamento #${estimate.id}`,
       html: `
         <h1>Orçamento #${estimate.id}</h1>
-        <p><strong>Cliente:</strong> ${estimate.client?.name || 'N/A'}</p>
+        <p><strong>Cliente:</strong> ${estimate.clientId?.name || 'N/A'}</p>
         <p><strong>Data:</strong> ${new Date(estimate.date).toLocaleDateString('pt-BR')}</p>
         <p><strong>Total:</strong> R$ ${estimate.total.toFixed(2)}</p>
         <p><strong>Status:</strong> ${estimate.status}</p>

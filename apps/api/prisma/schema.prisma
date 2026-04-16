@@ -7,368 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// ///////////////// CONTACT MESSAGES (FAQ) ////////////////////
-model ContactMessage {
-  id        Int      @id @default(autoincrement())
-  tenantId  String?
-  userEmail String?
-  userName  String?
-  message   String
-  status    String   @default("pending")
-  reply     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
-}
+// ========================
+// ENUMS
+// ========================
 
-/// ///////////////// ASSINATURAS PENDENTES (antes do cadastro) ////////////////////
-model PendingSubscription {
-  id             String   @id @default(uuid())
-  email          String   @unique
-  subscriptionId String?
-  planId         String
-  trialEndsAt    DateTime
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  status         String   @default("pending")
-  tenantId       String?
-  tenant         Tenant?  @relation(fields: [tenantId], references: [id])
-
-  @@index([email, status])
-  @@index([status])
-}
-
-/// ///////////////// TENANT (Oficina) ////////////////////
-model Tenant {
-  id                     String                  @id @default(uuid())
-  name                   String
-  documentType           String
-  documentNumber         String                  @unique
-  cep                    String
-  address                String
-  email                  String                  @unique
-  phone                  String
-  logoUrl                String?
-  status                 TenantStatus            @default(ACTIVE)
-  trialEndsAt            DateTime?
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  paymentStatus          String?                 @default("pending")
-  subscriptionId         String?                 @unique
-  appointments           Appointment[]
-  clients                Client[]
-  contactMessages        ContactMessage[]
-  estimates              Estimate[]
-  invoices               Invoice[]
-  notifications          Notification[]
-  payments               Payment[]
-  pendingSubscriptions   PendingSubscription[]
-  publicShares           PublicShare[]
-  scheduledNotifications ScheduledNotification[]
-  subscriptions          Subscription[]
-  users                  User[]
-
-  @@index([status])
-  @@index([email])
-  @@index([documentNumber])
-}
-
-/// ///////////////// USUÁRIOS (proprietários e admins da oficina) ////////////////////
-model User {
-  name          String
-  email         String         @unique
-  password      String
-  role          UserRole       @default(OWNER)
-  tenantId      String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  id            Int            @id @default(autoincrement())
-  clients       Client[]
-  refreshTokens RefreshToken[]
-  tenant        Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sessions      UserSession[]
-
-  @@index([email])
-  @@index([tenantId])
-}
-
-/// ///////////////// SUPER ADMIN (opcional) ////////////////////
-model SuperAdmin {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  createdAt DateTime @default(now())
-}
-
-/// ///////////////// SUBSCRIPTIONS ////////////////////
-model Subscription {
-  id                    String             @id @default(uuid())
-  tenantId              String
-  planName              String
-  price                 Float
-  status                SubscriptionStatus
-  gateway               String
-  gatewaySubscriptionId String?
-  startDate             DateTime
-  endDate               DateTime?
-  createdAt             DateTime           @default(now())
-  payments              Payment[]
-  tenant                Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([status])
-  @@index([gatewaySubscriptionId])
-}
-
-/// ///////////////// PAYMENTS ////////////////////
-model Payment {
-  id               String        @id @default(uuid())
-  tenantId         String
-  subscriptionId   String?
-  amount           Float
-  status           PaymentStatus
-  gatewayPaymentId String?
-  paidAt           DateTime?
-  createdAt        DateTime      @default(now())
-  subscription     Subscription? @relation(fields: [subscriptionId], references: [id])
-  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([subscriptionId])
-  @@index([status])
-}
-
-/// ///////////////// CLIENTES ////////////////////
-model Client {
-  id           Int           @id @default(autoincrement())
-  tenantId     String
-  userId       Int?
-  name         String
-  phone        String
-  vehicle      String
-  plate        String
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  address      String?
-  document     String?
-  appointments Appointment[]
-  budgets      Budget[]
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user         User?         @relation(fields: [userId], references: [id])
-  estimates    Estimate[]
-  invoices     Invoice[]
-
-  @@index([tenantId])
-  @@index([userId])
-  @@index([phone])
-  @@index([tenantId, name])
-  @@index([tenantId, createdAt])
-}
-
-/// ///////////////// REFRESH TOKENS ////////////////////
-model RefreshToken {
-  id        Int      @id @default(autoincrement())
-  token     String   @unique
-  userId    Int
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([token])
-}
-
-/// ///////////////// SESSÕES ATIVAS DOS USUÁRIOS ////////////////////
-model UserSession {
-  id           Int      @id @default(autoincrement())
-  userId       Int
-  sessionToken String   @unique
-  ipAddress    String?
-  userAgent    String?
-  lastActivity DateTime @default(now())
-  createdAt    DateTime @default(now())
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([sessionToken])
-}
-
-/// ///////////////// AGENDAMENTOS ////////////////////
-model Appointment {
-  tenantId      String
-  createdAt     DateTime       @default(now())
-  clientId      Int
-  comment       String?
-  date          DateTime
-  id            Int            @id @default(autoincrement())
-  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  notifications Notification[]
-
-  @@index([tenantId])
-  @@index([clientId])
-  @@index([date])
-}
-
-/// ///////////////// ORÇAMENTOS ////////////////////
-model Estimate {
-  tenantId          String
-  total             Float
-  status            EstimateStatus @default(DRAFT)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  clientId          Int
-  id                Int            @id @default(autoincrement())
-  date              DateTime
-  shareToken        String?        @unique
-  shareTokenExpires DateTime?
-  pdfGeneratedAt    DateTime?      @map("pdf_generated_at")
-  pdfStatus         String?        @default("pending") @map("pdf_status")
-  pdfUrl            String?        @map("pdf_url")
-  pdfKey            String?        @map("pdf_key")
-  client            Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  tenant            Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  items             EstimateItem[]
-  invoice           Invoice?
-
-  @@index([tenantId])
-  @@index([clientId])
-  @@index([status])
-  @@index([pdfUrl])
-  @@index([pdfStatus])
-  @@index([tenantId, pdfStatus])
-  @@index([pdfKey])
-  @@index([tenantId, status])
-  @@index([tenantId, createdAt])
-}
-
-model EstimateItem {
-  description String
-  quantity    Int
-  price       Float
-  total       Float
-  id          Int      @id @default(autoincrement())
-  estimateId  Int
-  issPercent  Float?
-  estimate    Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-
-  @@unique([estimateId, id])
-  @@index([estimateId])
-}
-
-/// ///////////////// ORÇAMENTOS (versão antiga, manter compatibilidade) ////////////////////
-model Budget {
-  id        Int      @id @default(autoincrement())
-  clientId  Int
-  tenantId  String
-  items     String
-  total     Float
-  status    String
-  createdAt DateTime @default(now())
-  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([clientId])
-}
-
-/// ///////////////// FATURAS ////////////////////
-model Invoice {
-  tenantId          String
-  total             Float
-  status            InvoiceStatus @default(PENDING)
-  createdAt         DateTime      @default(now())
-  clientId          Int
-  number            String        @unique
-  id                Int           @id @default(autoincrement())
-  estimateId        Int?          @unique
-  shareToken        String?       @unique
-  shareTokenExpires DateTime?
-  pdfGeneratedAt    DateTime?     @map("pdf_generated_at")
-  pdfStatus         String?       @default("pending") @map("pdf_status")
-  pdfUrl            String?       @map("pdf_url")
-  pdfKey            String?       @map("pdf_key")
-  client            Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  estimate          Estimate?     @relation(fields: [estimateId], references: [id])
-  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  items             InvoiceItem[]
-
-  @@index([tenantId])
-  @@index([clientId])
-  @@index([status])
-  @@index([number])
-  @@index([pdfUrl])
-  @@index([pdfStatus])
-  @@index([tenantId, pdfStatus])
-  @@index([pdfKey])
-  @@index([tenantId, status])
-  @@index([tenantId, createdAt])
-}
-
-model InvoiceItem {
-  description String
-  quantity    Int
-  price       Float
-  total       Float
-  id          Int     @id @default(autoincrement())
-  invoiceId   Int
-  issPercent  Float?
-  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-
-  @@unique([invoiceId, id])
-  @@index([invoiceId])
-}
-
-/// ///////////////// NOTIFICAÇÕES ////////////////////
-model Notification {
-  tenantId      String?
-  title         String
-  message       String
-  isGlobal      Boolean      @default(false)
-  read          Boolean      @default(false)
-  createdAt     DateTime     @default(now())
-  id            Int          @id @default(autoincrement())
-  appointmentId Int?
-  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
-  tenant        Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([appointmentId])
-  @@index([read, createdAt])
-}
-
-/// ///////////////// NOTIFICAÇÕES AGENDADAS (para o admin) ////////////////////
-model ScheduledNotification {
-  id        String   @id @default(uuid())
-  tenantId  String?
-  title     String
-  message   String
-  target    String
-  schedule  DateTime
-  sent      Boolean  @default(false)
-  createdAt DateTime @default(now())
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([schedule, sent])
-}
-
-model PublicShare {
-  id         String    @id @default(cuid())
-  token      String    @unique
-  type       ShareType
-  resourceId Int
-  tenantId   String
-  pdfUrl     String?
-  expiresAt  DateTime?
-  createdAt  DateTime  @default(now())
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([token])
-  @@index([tenantId])
-  @@index([type, resourceId])
-}
-
-/// ///////////////// ENUMS ////////////////////
 enum TenantStatus {
   ACTIVE
   BLOCKED
@@ -410,4 +52,394 @@ enum InvoiceStatus {
 enum ShareType {
   ESTIMATE
   INVOICE
+}
+
+// ========================
+// MODELOS
+// ========================
+
+model Tenant {
+  id                     String                  @id @default(uuid())
+  name                   String
+  documentType           String
+  documentNumber         String                  @unique
+  cep                    String
+  address                String
+  email                  String                  @unique
+  phone                  String
+  logoUrl                String?
+  status                 TenantStatus            @default(ACTIVE)
+  trialEndsAt            DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  paymentStatus          String?                 @default("pending")
+  subscriptionId         String?                 @unique
+
+  // Relacionamentos
+  appointments           Appointment[]
+  clients                Client[]
+  contactMessages        ContactMessage[]
+  estimates              Estimate[]
+  invoices               Invoice[]
+  notifications          Notification[]
+  payments               Payment[]
+  pendingSubscriptions   PendingSubscription[]
+  publicShares           PublicShare[]
+  scheduledNotifications ScheduledNotification[]
+  subscriptions          Subscription[]
+  users                  User[]
+  budgets                Budget[]                 // ← relação com Budget
+
+  @@index([status])
+  @@index([email])
+  @@index([documentNumber])
+  @@index([paymentStatus])
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  name          String
+  email         String         @unique
+  password      String
+  role          UserRole       @default(OWNER)
+  tenantId      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  tenant        Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clients       Client[]
+  refreshTokens RefreshToken[]
+  sessions      UserSession[]
+
+  @@index([email])
+  @@index([tenantId])
+}
+
+model Client {
+  id           Int           @id @default(autoincrement())
+  tenantId     String
+  userId       Int?
+  name         String
+  phone        String
+  vehicle      String
+  plate        String
+  address      String?
+  document     String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id])
+  appointments Appointment[]
+  budgets      Budget[]
+  estimates    Estimate[]
+  invoices     Invoice[]
+
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, name])
+  @@index([tenantId, phone])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Appointment {
+  id           Int           @id @default(autoincrement())
+  tenantId     String
+  clientId     Int
+  date         DateTime
+  comment      String?
+  createdAt    DateTime      @default(now())
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client       Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@index([tenantId, date])
+  @@index([clientId])
+  @@index([date])
+}
+
+model Estimate {
+  id                Int            @id @default(autoincrement())
+  tenantId          String
+  clientId          Int
+  date              DateTime
+  total             Decimal        @db.Decimal(10,2)
+  status            EstimateStatus @default(DRAFT)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+
+  pdfUrl            String?        @map("pdf_url")
+  pdfKey            String?        @map("pdf_key")
+  pdfStatus         String?        @default("pending") @map("pdf_status")
+  pdfGeneratedAt    DateTime?      @map("pdf_generated_at")
+  shareToken        String?        @unique
+  shareTokenExpires DateTime?
+
+  tenant            Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client            Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  items             EstimateItem[]
+  invoice           Invoice?
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, clientId])
+  @@index([deletedAt])
+  @@index([shareToken])
+  @@index([pdfStatus])
+}
+
+model EstimateItem {
+  id          Int      @id @default(autoincrement())
+  estimateId  Int
+  description String
+  quantity    Int
+  price       Decimal  @db.Decimal(10,2)
+  total       Decimal  @db.Decimal(10,2)
+  issPercent  Float?
+
+  estimate    Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@index([estimateId])
+}
+
+model Invoice {
+  id                Int           @id @default(autoincrement())
+  tenantId          String
+  clientId          Int
+  number            String        @unique
+  total             Decimal       @db.Decimal(10,2)
+  status            InvoiceStatus @default(PENDING)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
+
+  estimateId        Int?          @unique
+
+  pdfUrl            String?       @map("pdf_url")
+  pdfKey            String?       @map("pdf_key")
+  pdfStatus         String?       @default("pending") @map("pdf_status")
+  pdfGeneratedAt    DateTime?     @map("pdf_generated_at")
+  shareToken        String?       @unique
+  shareTokenExpires DateTime?
+
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client            Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  estimate          Estimate?     @relation(fields: [estimateId], references: [id])
+  items             InvoiceItem[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, number])
+  @@index([deletedAt])
+  @@index([shareToken])
+  @@index([pdfStatus])
+}
+
+model InvoiceItem {
+  id          Int      @id @default(autoincrement())
+  invoiceId   Int
+  description String
+  quantity    Int
+  price       Decimal  @db.Decimal(10,2)
+  total       Decimal  @db.Decimal(10,2)
+  issPercent  Float?
+
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Budget {
+  id        Int      @id @default(autoincrement())
+  clientId  Int
+  tenantId  String
+  total     Decimal  @db.Decimal(10,2)
+  status    String   // "DRAFT", "SENT", "APPROVED", "REJECTED"
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items     BudgetItem[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([deletedAt])
+}
+
+model BudgetItem {
+  id          Int      @id @default(autoincrement())
+  budgetId    Int
+  description String
+  quantity    Int
+  price       Decimal  @db.Decimal(10,2)
+  total       Decimal  @db.Decimal(10,2)
+  issPercent  Float?
+
+  budget      Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@index([budgetId])
+}
+
+model Subscription {
+  id                    String             @id @default(uuid())
+  tenantId              String
+  planName              String
+  price                 Decimal            @db.Decimal(10,2)
+  status                SubscriptionStatus
+  gateway               String
+  gatewaySubscriptionId String?
+  startDate             DateTime
+  endDate               DateTime?
+  createdAt             DateTime           @default(now())
+
+  tenant                Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payments              Payment[]
+
+  @@index([tenantId, status])
+  @@index([gatewaySubscriptionId])
+  @@index([endDate])
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  tenantId         String
+  subscriptionId   String?
+  amount           Decimal       @db.Decimal(10,2)
+  status           PaymentStatus
+  gatewayPaymentId String?
+  paidAt           DateTime?
+  createdAt        DateTime      @default(now())
+
+  subscription     Subscription? @relation(fields: [subscriptionId], references: [id])
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([subscriptionId])
+  @@index([createdAt])
+}
+
+model PendingSubscription {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  subscriptionId String?
+  planId         String
+  trialEndsAt    DateTime
+  status         String   @default("pending")
+  tenantId       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant?  @relation(fields: [tenantId], references: [id])
+
+  @@index([email, status])
+  @@index([trialEndsAt])
+}
+
+model PublicShare {
+  id         String    @id @default(cuid())
+  token      String    @unique
+  type       ShareType
+  resourceId Int
+  tenantId   String
+  pdfUrl     String?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([tenantId])
+  @@index([type, resourceId])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id           Int      @id @default(autoincrement())
+  tokenHash    String   @unique
+  userId       Int
+  sessionToken String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sessionToken])
+  @@index([expiresAt])
+}
+
+model UserSession {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  sessionToken String   @unique
+  ipAddress    String?
+  userAgent    String?
+  lastActivity DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionToken])
+  @@index([lastActivity])
+}
+
+model Notification {
+  id           Int          @id @default(autoincrement())
+  tenantId     String?
+  title        String
+  message      String
+  isGlobal     Boolean      @default(false)
+  read         Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  appointmentId Int?
+
+  tenant       Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment  Appointment? @relation(fields: [appointmentId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([read, createdAt])
+  @@index([appointmentId])
+}
+
+model ScheduledNotification {
+  id        String   @id @default(uuid())
+  tenantId  String?
+  title     String
+  message   String
+  target    String
+  schedule  DateTime
+  sent      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([schedule, sent])
+}
+
+model ContactMessage {
+  id        Int      @id @default(autoincrement())
+  tenantId  String?
+  userEmail String?
+  userName  String?
+  message   String
+  status    String   @default("pending")
+  reply     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([createdAt])
+}
+
+model SuperAdmin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+
+  @@index([email])
 }

@@ -1,4 +1,3 @@
-// src/pages/private/Configuracoes/Configuracoes.tsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiAlertTriangle } from "react-icons/fi";
@@ -12,7 +11,6 @@ export default function Configuracoes() {
 
   const iconColor = "#00e5ff";
   const bgCard = "#1a1a1a";
-  const bgInput = "#2a2a2a";
 
   const handleDarBaixa = () => {
     setMostrarConfirmacao(true);
@@ -20,7 +18,6 @@ export default function Configuracoes() {
 
   const confirmarDarBaixa = async () => {
     setProcessando(true);
-    // Simular chamada à API para cancelar plano
     setTimeout(() => {
       console.log("Plano cancelado para usuário:", user?.id);
       logout();
@@ -39,7 +36,6 @@ export default function Configuracoes() {
       }}
     >
       <div style={{ maxWidth: "800px", margin: "0 auto" }}>
-        {/* Cabeçalho com botão voltar */}
         <div style={{ marginBottom: "40px" }}>
           <button
             onClick={() => navigate(-1)}
@@ -74,7 +70,6 @@ export default function Configuracoes() {
           Configurações
         </h1>
 
-        {/* Card principal */}
         <div
           style={{
             background: bgCard,
@@ -85,7 +80,6 @@ export default function Configuracoes() {
             marginBottom: "48px",
           }}
         >
-          {/* Informações da conta */}
           <div style={{ marginBottom: "32px" }}>
             <h2
               style={{
@@ -105,7 +99,6 @@ export default function Configuracoes() {
             </p>
           </div>
 
-          {/* Preferências (futuro) */}
           <div style={{ marginBottom: "32px" }}>
             <h2
               style={{
@@ -120,7 +113,6 @@ export default function Configuracoes() {
             <p style={{ color: "#888" }}>Em breve: tema, suporte tecnico, etc.</p>
           </div>
 
-          {/* Zona de perigo */}
           <div style={{ borderTop: "1px solid #333", paddingTop: "24px" }}>
             <h2
               style={{
@@ -160,7 +152,6 @@ export default function Configuracoes() {
         </div>
       </div>
 
-      {/* Modal de confirmação */}
       {mostrarConfirmacao && (
         <div
           style={{

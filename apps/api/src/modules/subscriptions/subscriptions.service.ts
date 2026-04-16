@@ -1,6 +1,8 @@
+// src/modules/subscriptions/subscriptions.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { PaymentService } from '../../payments/payment.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class SubscriptionsService {
@@ -22,7 +24,7 @@ export class SubscriptionsService {
         startDate: true,
         endDate: true,
         createdAt: true,
-        payments: {
+        payments: {                              // CORRIGIDO: Payment -> payments
           select: {
             id: true,
             amount: true,
@@ -54,7 +56,7 @@ export class SubscriptionsService {
         startDate: true,
         endDate: true,
         createdAt: true,
-        payments: {
+        payments: {                              // CORRIGIDO: Payment -> payments
           select: {
             id: true,
             amount: true,
@@ -65,7 +67,7 @@ export class SubscriptionsService {
           },
           orderBy: { createdAt: 'desc' },
         },
-        tenant: {
+        tenant: {                                // CORRIGIDO: Tenant -> tenant
           select: {
             id: true,
             name: true,
@@ -93,6 +95,7 @@ export class SubscriptionsService {
   }) {
     return this.prisma.subscription.create({
       data: {
+        id: randomUUID(),
         tenantId: data.tenantId,
         planName: data.planName,
         price: data.price,
@@ -112,7 +115,7 @@ export class SubscriptionsService {
         startDate: true,
         endDate: true,
         createdAt: true,
-        tenant: {
+        tenant: {                                // CORRIGIDO: Tenant -> tenant
           select: {
             id: true,
             name: true,
@@ -127,7 +130,7 @@ export class SubscriptionsService {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       include: {
-        subscriptions: {
+        subscriptions: {                         // Nome correto da relação (plural)
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
@@ -165,6 +168,7 @@ export class SubscriptionsService {
       const trialDays = 30;
       pending = await this.prisma.pendingSubscription.create({
         data: {
+          id: randomUUID(),
           email,
           tenantId,
           planId: 'PLANO_BASICO',

@@ -1,3 +1,4 @@
+// src/modules/admin/admin.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -12,8 +13,6 @@ export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
   constructor(private prisma: PrismaService) {}
-
-  // ================= DASHBOARD =================
 
   async getDashboard() {
     const [
@@ -41,8 +40,6 @@ export class AdminService {
       totalInvoices,
     };
   }
-
-  // ================= TENANTS =================
 
   async getTenants(query: any) {
     const where: any = {};
@@ -85,8 +82,6 @@ export class AdminService {
     return this.prisma.tenant.delete({ where: { id } });
   }
 
-  // ================= FINANCEIRO =================
-
   async getFinancialSummary(query: any) {
     const year = query.year
       ? parseInt(query.year)
@@ -103,7 +98,7 @@ export class AdminService {
     });
 
     const totalRevenue = invoices.reduce(
-      (acc, inv) => acc + inv.total,
+      (acc, inv) => acc + Number(inv.total),
       0,
     );
 
@@ -112,8 +107,6 @@ export class AdminService {
       totalInvoices: invoices.length,
     };
   }
-
-  // ================= NOTIFICATIONS (FIX DO ERRO) =================
 
   async sendNotification(body: any) {
     const { message, title, target, tenantIds } = body;
@@ -148,8 +141,6 @@ export class AdminService {
     return { success: true };
   }
 
-  // ================= INVOICES =================
-
   async getAllInvoices(query: any) {
     const where: any = {};
 
@@ -178,8 +169,6 @@ export class AdminService {
     return invoice;
   }
 
-  // ================= ESTIMATES =================
-
   async getAllEstimates(query: any) {
     const where: any = {};
 
@@ -203,13 +192,10 @@ export class AdminService {
       },
     });
 
-    if (!estimate)
-      throw new NotFoundException('Orçamento não encontrado');
+    if (!estimate) throw new NotFoundException('Orçamento não encontrado');
 
     return estimate;
   }
-
-  // ================= CLIENTS =================
 
   async getAllClients(query: any) {
     const where: any = {};
@@ -236,13 +222,10 @@ export class AdminService {
       where: { id: Number(id) },
     });
 
-    if (!client)
-      throw new NotFoundException('Cliente não encontrado');
+    if (!client) throw new NotFoundException('Cliente não encontrado');
 
     return client;
   }
-
-  // ================= NOTIFICATIONS =================
 
   async getNotifications() {
     return this.prisma.notification.findMany({

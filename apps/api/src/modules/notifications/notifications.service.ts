@@ -1,3 +1,4 @@
+// src/modules/notifications/notifications.service.ts
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
@@ -11,15 +12,7 @@ export class NotificationsService {
     try {
       return await this.prisma.notification.findMany({
         where: { tenantId },
-        select: {
-          id: true,
-          title: true,
-          message: true,
-          read: true,
-          isGlobal: true,
-          createdAt: true,
-          appointmentId: true,
-        },
+        include: { appointment: true },
         orderBy: { createdAt: 'desc' },
       });
     } catch (error) {
@@ -32,21 +25,13 @@ export class NotificationsService {
     try {
       const notification = await this.prisma.notification.findFirst({
         where: { id, tenantId },
-        select: { id: true },
       });
       if (!notification) throw new NotFoundException('Notificação não encontrada');
+      
       return await this.prisma.notification.update({
         where: { id },
         data: { read: true },
-        select: {
-          id: true,
-          title: true,
-          message: true,
-          read: true,
-          isGlobal: true,
-          createdAt: true,
-          appointmentId: true,
-        },
+        include: { appointment: true },
       });
     } catch (error) {
       this.logger.error(`Erro ao marcar notificação ${id} como lida: ${error.message}`);
@@ -77,15 +62,7 @@ export class NotificationsService {
           read: false,
           isGlobal: false,
         },
-        select: {
-          id: true,
-          title: true,
-          message: true,
-          read: true,
-          isGlobal: true,
-          createdAt: true,
-          appointmentId: true,
-        },
+        include: { appointment: true },
       });
       this.logger.log(`Notificação criada com ID ${notification.id}`);
       return notification;

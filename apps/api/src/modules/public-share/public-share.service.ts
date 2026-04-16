@@ -1,4 +1,3 @@
-// apps/api/src/modules/public-share/public-share.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -12,9 +11,6 @@ import { randomBytes } from 'crypto';
 export class PublicShareService {
   constructor(private prisma: PrismaService) {}
 
-  // =========================
-  // CREATE SHARE (CORRIGIDO)
-  // =========================
   async create({
     tenantId,
     type,
@@ -27,154 +23,117 @@ export class PublicShareService {
     expiresInDays?: number;
   }) {
     const token = randomBytes(32).toString('hex');
-
     const expiresAt = new Date(Date.now() + expiresInDays * 86400000);
-
     return this.prisma.publicShare.create({
-      data: {
-        token,
-        tenantId,
-        type,
-        resourceId,
-        expiresAt,
-        // pdfUrl é opcional no schema, pode ficar null
-      },
+      data: { token, tenantId, type, resourceId, expiresAt },
     });
   }
 
-  // =========================
-  // FIND BY TOKEN (VALIDADO)
-  // =========================
   async findByToken(token: string) {
-    const share = await this.prisma.publicShare.findUnique({
-      where: { token },
-    });
-
-    if (!share) {
-      throw new NotFoundException('Link inválido ou expirado');
-    }
-
+    const share = await this.prisma.publicShare.findUnique({ where: { token } });
+    if (!share) throw new NotFoundException('Link inválido ou expirado');
     if (share.expiresAt && new Date() > share.expiresAt) {
       throw new UnauthorizedException('Link expirado');
     }
-
     return share;
   }
 
-  // =========================
-  // GET FULL DATA (PDF + DADOS)
-  // =========================
   async getPublicData(token: string) {
     const share = await this.findByToken(token);
 
     if (share.type === 'ESTIMATE') {
       const estimate = await this.prisma.estimate.findUnique({
         where: { id: share.resourceId },
-        include: {
-          client: true,
-          items: true,
-          tenant: true,
-        },
+        include: { client: true, items: true, tenant: true },
       });
-
-      if (!estimate) {
-        throw new NotFoundException('Orçamento não encontrado');
-      }
-
-      // Buscar PDF do orçamento se existir
-      let pdfUrl = share.pdfUrl;
-      if (!pdfUrl && estimate.pdfUrl) {
-        pdfUrl = estimate.pdfUrl;
-      }
+      if (!estimate) throw new NotFoundException('Orçamento não encontrado');
 
       return {
-        type: 'ESTIMATE',
-        pdfUrl,
-        data: {
-          id: estimate.id,
-          total: estimate.total,
-          date: estimate.date,
-          status: estimate.status,
-          client: estimate.client,
-          items: estimate.items,
-          tenant: {
-            name: estimate.tenant?.name,
-            documentNumber: estimate.tenant?.documentNumber,
-            phone: estimate.tenant?.phone,
-            email: estimate.tenant?.email,
-          },
+        id: estimate.id,
+        total: Number(estimate.total),
+        date: estimate.date,
+        status: estimate.status,
+        client: {
+          id: estimate.client.id,
+          name: estimate.client.name,
+          phone: estimate.client.phone,
+          vehicle: estimate.client.vehicle,
+          plate: estimate.client.plate,
+          address: estimate.client.address || '',
+          document: estimate.client.document || '',
         },
+        items: estimate.items.map(item => ({
+          description: item.description,
+          quantity: item.quantity,
+          price: Number(item.price),
+          total: Number(item.total),
+          issPercent: item.issPercent ?? 0,
+        })),
+        tenant: {
+          name: estimate.tenant?.name ?? '',
+          documentNumber: estimate.tenant?.documentNumber ?? '',
+          phone: estimate.tenant?.phone ?? '',
+          email: estimate.tenant?.email ?? '',
+          logoUrl: estimate.tenant?.logoUrl ?? '',
+        },
+        pdfUrl: share.pdfUrl || estimate.pdfUrl || '',
       };
     }
 
     if (share.type === 'INVOICE') {
       const invoice = await this.prisma.invoice.findUnique({
         where: { id: share.resourceId },
-        include: {
-          client: true,
-          items: true,
-          tenant: true,
-        },
+        include: { client: true, items: true, tenant: true },
       });
-
-      if (!invoice) {
-        throw new NotFoundException('Fatura não encontrada');
-      }
-
-      let pdfUrl = share.pdfUrl;
-      if (!pdfUrl && invoice.pdfUrl) {
-        pdfUrl = invoice.pdfUrl;
-      }
+      if (!invoice) throw new NotFoundException('Fatura não encontrada');
 
       return {
-        type: 'INVOICE',
-        pdfUrl,
-        data: {
-          id: invoice.id,
-          number: invoice.number,
-          total: invoice.total,
-          status: invoice.status,
-          createdAt: invoice.createdAt,
-          client: invoice.client,
-          items: invoice.items,
-          tenant: {
-            name: invoice.tenant?.name,
-            documentNumber: invoice.tenant?.documentNumber,
-            phone: invoice.tenant?.phone,
-            email: invoice.tenant?.email,
-          },
+        id: invoice.id,
+        number: invoice.number,
+        total: Number(invoice.total),
+        status: invoice.status,
+        createdAt: invoice.createdAt,
+        client: {
+          id: invoice.client.id,
+          name: invoice.client.name,
+          phone: invoice.client.phone,
+          vehicle: invoice.client.vehicle,
+          plate: invoice.client.plate,
+          address: invoice.client.address || '',
+          document: invoice.client.document || '',
         },
+        items: invoice.items.map(item => ({
+          description: item.description,
+          quantity: item.quantity,
+          price: Number(item.price),
+          total: Number(item.total),
+          issPercent: item.issPercent ?? 0,
+        })),
+        tenant: {
+          name: invoice.tenant?.name ?? '',
+          documentNumber: invoice.tenant?.documentNumber ?? '',
+          phone: invoice.tenant?.phone ?? '',
+          email: invoice.tenant?.email ?? '',
+          logoUrl: invoice.tenant?.logoUrl ?? '',
+        },
+        pdfUrl: share.pdfUrl || invoice.pdfUrl || '',
       };
     }
 
     throw new BadRequestException('Tipo de compartilhamento inválido');
   }
 
-  // =========================
-  // REGENERAR LINK
-  // =========================
   async regenerate(token: string) {
     const share = await this.findByToken(token);
-
     const newToken = randomBytes(32).toString('hex');
-
     return this.prisma.publicShare.update({
       where: { id: share.id },
-      data: {
-        token: newToken,
-        expiresAt: new Date(Date.now() + 7 * 86400000),
-      },
+      data: { token: newToken, expiresAt: new Date(Date.now() + 7 * 86400000) },
     });
   }
 
-  // =========================
-  // DELETE
-  // =========================
   async delete(token: string) {
     const share = await this.findByToken(token);
-
-    return this.prisma.publicShare.delete({
-      where: { id: share.id },
-    });
+    return this.prisma.publicShare.delete({ where: { id: share.id } });
   }
 }

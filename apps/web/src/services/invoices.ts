@@ -1,11 +1,11 @@
 import api from "./api";
 
 export interface InvoiceItem {
-  id: number;
+  id?: number;
   description: string;
   quantity: number;
   price: number;
-  total: number;
+  total?: number;
   issPercent?: number;
 }
 
@@ -15,20 +15,20 @@ export interface Invoice {
   number: string;
   total: number;
   status: "PENDING" | "PAID" | "CANCELED";
+  createdAt: string;
+  updatedAt?: string;
   pdfUrl?: string;
   pdfStatus?: string;
   pdfGeneratedAt?: string;
-  createdAt: string;
-  updatedAt?: string;
   shareToken?: string;
   shareTokenExpires?: string;
   items: InvoiceItem[];
   client?: {
     id: number;
     name: string;
-    phone: string;
-    vehicle: string;
-    plate: string;
+    phone?: string;
+    vehicle?: string;
+    plate?: string;
     address?: string;
     document?: string;
   };
@@ -36,34 +36,35 @@ export interface Invoice {
 
 export interface CreateInvoiceData {
   clientId: number;
-  estimateId?: number;
   items: Omit<InvoiceItem, "id" | "total">[];
   status?: "PENDING" | "PAID" | "CANCELED";
 }
 
-export const getInvoices = async (page = 1, limit = 50): Promise<{ data: Invoice[]; total: number; page: number; limit: number; totalPages: number }> => {
-  try {
-    const response = await api.get(`/invoices?page=${page}&limit=${limit}`);
-    return response.data;
-  } catch (error: any) {
-    if (error.response?.status === 404) return { data: [], total: 0, page: 1, limit, totalPages: 0 };
-    throw error;
-  }
+function extractObject(data: any): any {
+  return data?.data || data;
+}
+
+export const getInvoices = async (): Promise<Invoice[]> => {
+  const response = await api.get("/invoices");
+  if (Array.isArray(response.data)) return response.data;
+  if (response.data?.data && Array.isArray(response.data.data)) return response.data.data;
+  if (response.data?.invoices && Array.isArray(response.data.invoices)) return response.data.invoices;
+  return [];
 };
 
 export const getInvoiceById = async (id: number): Promise<Invoice> => {
   const response = await api.get(`/invoices/${id}`);
-  return response.data;
+  return extractObject(response.data);
 };
 
 export const createInvoice = async (data: CreateInvoiceData): Promise<Invoice> => {
   const response = await api.post("/invoices", data);
-  return response.data;
+  return extractObject(response.data);
 };
 
-export const updateInvoice = async (id: number, data: CreateInvoiceData): Promise<Invoice> => {
+export const updateInvoice = async (id: number, data: Partial<CreateInvoiceData>): Promise<Invoice> => {
   const response = await api.put(`/invoices/${id}`, data);
-  return response.data;
+  return extractObject(response.data);
 };
 
 export const deleteInvoice = async (id: number): Promise<void> => {
@@ -72,41 +73,26 @@ export const deleteInvoice = async (id: number): Promise<void> => {
 
 export function calculateTotalWithIss(items: InvoiceItem[]): number {
   return items.reduce((acc, item) => {
-    const itemTotal = item.price * item.quantity;
+    const itemTotal = (item.price || 0) * (item.quantity || 1);
     const iss = item.issPercent ? itemTotal * (item.issPercent / 100) : 0;
     return acc + itemTotal + iss;
   }, 0);
 }
 
-// 📲 Enviar fatura via WhatsApp (com phoneNumber opcional)
-export const sendInvoiceWhatsApp = async (
-  id: number,
-  phoneNumber?: string
-): Promise<{
-  whatsappUrl?: string;
-  message: string;
-  success: boolean;
-}> => {
+export const shareInvoice = async (id: number): Promise<{ shareUrl: string }> => {
+  try {
+    const response = await api.post(`/invoices/${id}/share`);
+    return extractObject(response.data);
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      const response = await api.get(`/invoices/${id}/share`);
+      return extractObject(response.data);
+    }
+    throw error;
+  }
+};
+
+export const sendInvoiceWhatsApp = async (id: number, phoneNumber?: string) => {
   const response = await api.post(`/invoices/${id}/send-whatsapp`, { phoneNumber });
-  return response.data; // { success, whatsappUrl, message }
-};
-
-// 🔗 Gerar token de compartilhamento
-export const generateShareToken = async (id: number): Promise<{ token: string }> => {
-  const response = await api.post(`/invoices/${id}/share`);
-  return response.data;
-};
-
-// 🌐 Obter fatura pública via token (sem login)
-export const getInvoiceByToken = async (token: string): Promise<Invoice> => {
-  const response = await api.get(`/invoices/share/${token}`);
-  return response.data;
-};
-
-// 🔗 Gerar link público correto (PRODUÇÃO)
-export const getInvoicePublicLink = (token: string): string => {
-  const base =
-    import.meta.env.VITE_API_URL?.replace(/\/api$/, "") ||
-    "https://api.mecpro.tec.br/api";
-  return `${base}/api/public/invoices/share/${token}`;
+  return extractObject(response.data);
 };

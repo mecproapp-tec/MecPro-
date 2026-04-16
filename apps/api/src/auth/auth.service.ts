@@ -1,7 +1,9 @@
+// src/auth/auth.service.ts
 import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../shared/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
@@ -9,9 +11,12 @@ import { JwtService } from '@nestjs/jwt';
 import { PaymentService } from '../payments/payment.service';
 import { Request } from 'express';
 import { RegisterAdminDto } from './dto/register-admin.dto';
+import { randomUUID, randomBytes } from 'crypto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -25,7 +30,6 @@ export class AuthService {
     tenantId: string;
   }) {
     const hashed = await bcrypt.hash(data.password, 10);
-
     const user = await this.prisma.user.create({
       data: {
         name: data.name,
@@ -34,7 +38,6 @@ export class AuthService {
         tenantId: data.tenantId,
       },
     });
-
     return user;
   }
 
@@ -51,40 +54,32 @@ export class AuthService {
     paymentCompleted: boolean;
     preapprovalId?: string;
   }) {
-    const existingUser = await this.prisma.user.findUnique({
+    const existingUser = await this.prisma.user.findFirst({
       where: { email: data.email },
     });
-    if (existingUser)
-      throw new BadRequestException('Email já cadastrado');
+    if (existingUser) throw new BadRequestException('Email já cadastrado');
 
-    const existingTenant = await this.prisma.tenant.findUnique({
+    const existingTenant = await this.prisma.tenant.findFirst({
       where: { documentNumber: data.documentNumber },
     });
-    if (existingTenant)
-      throw new BadRequestException('Documento já cadastrado');
+    if (existingTenant) throw new BadRequestException('Documento já cadastrado');
 
     if (!data.preapprovalId) {
-      throw new BadRequestException(
-        'ID da assinatura não fornecido.',
-      );
+      throw new BadRequestException('ID da assinatura não fornecido.');
     }
 
     const subscriptionData = await this.paymentService.getSubscription(
       data.preapprovalId,
     );
-
     if (subscriptionData.status !== 'authorized') {
-      throw new BadRequestException(
-        'Assinatura não autorizada ou pendente.',
-      );
+      throw new BadRequestException('Assinatura não autorizada ou pendente.');
     }
 
-    const trialEndsAt = new Date(
-      subscriptionData.next_payment_date,
-    );
+    const trialEndsAt = new Date(subscriptionData.next_payment_date);
 
     const tenant = await this.prisma.tenant.create({
       data: {
+        id: randomUUID(),
         name: data.officeName,
         documentType: data.documentType,
         documentNumber: data.documentNumber,
@@ -95,12 +90,12 @@ export class AuthService {
         status: 'ACTIVE',
         trialEndsAt,
         subscriptionId: data.preapprovalId,
-        paymentStatus: 'trial',
+        paymentStatus: 'pending', // schema default é "pending", não "trial"
+        // updatedAt é gerenciado automaticamente pelo @updatedAt
       },
     });
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
-
     const user = await this.prisma.user.create({
       data: {
         name: data.ownerName,
@@ -112,7 +107,6 @@ export class AuthService {
     });
 
     const sessionToken = this.generateSessionToken();
-
     await this.prisma.userSession.create({
       data: {
         userId: user.id,
@@ -130,24 +124,23 @@ export class AuthService {
       role: user.role,
       sessionToken,
     };
-
     const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.generateRefreshToken();
+    const refreshTokenPlain = this.generateRefreshToken();
+    const refreshTokenHash = await bcrypt.hash(refreshTokenPlain, 10);
 
     await this.prisma.refreshToken.create({
       data: {
-        token: refreshToken,
+        tokenHash: refreshTokenHash,
         userId: user.id,
-        expiresAt: new Date(
-          Date.now() + 7 * 24 * 60 * 60 * 1000,
-        ),
+        sessionToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
 
     return {
       message: 'Cadastro realizado com sucesso',
       accessToken,
-      refreshToken,
+      refreshToken: refreshTokenPlain,
       user: {
         id: user.id,
         name: user.name,
@@ -158,20 +151,15 @@ export class AuthService {
   }
 
   async registerAdmin(data: RegisterAdminDto) {
-    const existingUser = await this.prisma.user.findUnique({
+    const existingUser = await this.prisma.user.findFirst({
       where: { email: data.email },
     });
+    if (existingUser) throw new BadRequestException('Email já cadastrado');
 
-    if (existingUser)
-      throw new BadRequestException('Email já cadastrado');
-
-    const ADMIN_TENANT_ID =
-      '00000000-0000-0000-0000-000000000001';
-
+    const ADMIN_TENANT_ID = '00000000-0000-0000-0000-000000000001';
     let tenant = await this.prisma.tenant.findUnique({
       where: { id: ADMIN_TENANT_ID },
     });
-
     if (!tenant) {
       tenant = await this.prisma.tenant.create({
         data: {
@@ -184,12 +172,12 @@ export class AuthService {
           email: 'admin@mecpro.com',
           phone: '0000000000',
           status: 'ACTIVE',
+          // updatedAt automático
         },
       });
     }
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
-
     const user = await this.prisma.user.create({
       data: {
         name: data.name,
@@ -207,29 +195,21 @@ export class AuthService {
   }
 
   async login(email: string, password: string, req: Request) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.user.findFirst({
       where: { email },
       include: { tenant: true },
     });
 
-    if (!user)
-      throw new UnauthorizedException('Usuário não encontrado');
-
+    if (!user) throw new UnauthorizedException('Credenciais inválidas');
     const valid = await bcrypt.compare(password, user.password);
-    if (!valid)
-      throw new UnauthorizedException('Senha incorreta');
+    if (!valid) throw new UnauthorizedException('Credenciais inválidas');
+    if (!user.tenantId) throw new UnauthorizedException('Usuário sem tenant');
 
-    if (!user.tenantId) {
-      throw new UnauthorizedException('Usuário sem tenant');
-    }
-
-    // Remove sessões antigas
     await this.prisma.userSession.deleteMany({
       where: { userId: user.id },
     });
 
     const sessionToken = this.generateSessionToken();
-
     await this.prisma.userSession.create({
       data: {
         userId: user.id,
@@ -247,23 +227,26 @@ export class AuthService {
       role: user.role,
       sessionToken,
     };
-
     const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.generateRefreshToken();
+    const refreshTokenPlain = this.generateRefreshToken();
+    const refreshTokenHash = await bcrypt.hash(refreshTokenPlain, 10);
+
+    await this.prisma.refreshToken.deleteMany({
+      where: { userId: user.id },
+    });
 
     await this.prisma.refreshToken.create({
       data: {
-        token: refreshToken,
+        tokenHash: refreshTokenHash,
         userId: user.id,
-        expiresAt: new Date(
-          Date.now() + 7 * 24 * 60 * 60 * 1000,
-        ),
+        sessionToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
 
     return {
       accessToken,
-      refreshToken,
+      refreshToken: refreshTokenPlain,
       user: {
         id: user.id,
         name: user.name,
@@ -275,62 +258,51 @@ export class AuthService {
   }
 
   async logout(userId: number, sessionToken: string) {
-    try {
-      // Deleta apenas a sessão específica
-      await this.prisma.userSession.deleteMany({
-        where: { 
-          userId: userId,
-          sessionToken: sessionToken 
-        },
-      });
-      
-      return { message: 'Logout realizado com sucesso' };
-    } catch (error) {
-      // Mesmo se falhar, retorna sucesso (o token vai expirar naturalmente)
-      return { message: 'Logout realizado com sucesso' };
-    }
+    await this.prisma.userSession.deleteMany({
+      where: { userId, sessionToken },
+    });
+    await this.prisma.refreshToken.deleteMany({
+      where: { userId, sessionToken },
+    });
+    return { message: 'Logout realizado com sucesso' };
   }
 
-  async refreshToken(token: string) {
-    const stored = await this.prisma.refreshToken.findUnique({
-      where: { token },
-      include: { user: true },
+  async refreshToken(refreshTokenPlain: string, sessionToken?: string) {
+    if (!sessionToken) {
+      throw new UnauthorizedException('Session token não fornecido');
+    }
+
+    const stored = await this.prisma.refreshToken.findFirst({
+      where: { sessionToken },
+      include: { user: true }, // CORRIGIDO: user (singular) em vez de users
     });
 
-    if (!stored)
-      throw new UnauthorizedException('Refresh token inválido');
+    if (!stored) throw new UnauthorizedException('Refresh token inválido');
+    const isValid = await bcrypt.compare(refreshTokenPlain, stored.tokenHash);
+    if (!isValid) throw new UnauthorizedException('Refresh token inválido');
 
     const user = stored.user;
-
     const session = await this.prisma.userSession.findFirst({
-      where: { userId: user.id },
+      where: { userId: user.id, sessionToken },
     });
-
-    if (!session)
-      throw new UnauthorizedException('Sessão não encontrada');
+    if (!session) throw new UnauthorizedException('Sessão não encontrada');
 
     const payload = {
       sub: user.id,
       email: user.email,
       tenantId: user.tenantId,
       role: user.role,
-      sessionToken: session.sessionToken,
+      sessionToken,
     };
-
     const accessToken = this.jwtService.sign(payload);
-
     return { accessToken };
   }
 
-  generateRefreshToken() {
-    return require('crypto')
-      .randomBytes(64)
-      .toString('hex');
+  generateRefreshToken(): string {
+    return randomBytes(64).toString('hex');
   }
 
-  generateSessionToken() {
-    return require('crypto')
-      .randomBytes(32)
-      .toString('hex');
+  generateSessionToken(): string {
+    return randomBytes(32).toString('hex');
   }
 }

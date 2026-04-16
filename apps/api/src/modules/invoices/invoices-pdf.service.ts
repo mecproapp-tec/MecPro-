@@ -7,8 +7,7 @@ import {
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
+import * as puppeteer from 'puppeteer';
 
 @Injectable()
 export class InvoicesPdfService {
@@ -20,48 +19,35 @@ export class InvoicesPdfService {
   }
 
   private async getBrowser() {
-    const isProduction = process.env.NODE_ENV === 'production';
-    const isWindows = process.platform === 'win32';
-
-    if (isProduction || !isWindows) {
-      // Produção ou Linux/Mac: usar @sparticuz/chromium
-      this.logger.log('Usando @sparticuz/chromium para PDF');
-      
-      const executablePath = await chromium.executablePath();
-      const args = chromium.args || [];
-      
+    // PRIORIDADE 1: Chrome do Windows configurado no .env
+    const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+    
+    if (fs.existsSync(chromePath)) {
+      this.logger.log(`✅ Usando Chrome: ${chromePath}`);
       return puppeteer.launch({
-        args: [...args, '--no-sandbox', '--disable-setuid-sandbox'],
-        executablePath,
-        headless: true,
-      });
-    } else {
-      // Desenvolvimento no Windows: tentar encontrar Chrome
-      const possiblePaths = [
-        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        process.env.CHROME_PATH,
-      ].filter(Boolean);
-
-      for (const chromePath of possiblePaths) {
-        if (chromePath && fs.existsSync(chromePath)) {
-          this.logger.log(`Chrome encontrado em: ${chromePath}`);
-          return puppeteer.launch({
-            executablePath: chromePath,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-            headless: true,
-          });
-        }
-      }
-
-      // Fallback: tentar sem caminho específico
-      this.logger.warn('Chrome não encontrado, tentando puppeteer padrão');
-      const puppeteerDefault = await import('puppeteer');
-      return puppeteerDefault.launch({
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath: chromePath,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
         headless: true,
       });
     }
+    
+    // PRIORIDADE 2: Tentar caminho alternativo (32 bits)
+    const altPath = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
+    if (fs.existsSync(altPath)) {
+      this.logger.log(`✅ Usando Chrome alternativo: ${altPath}`);
+      return puppeteer.launch({
+        executablePath: altPath,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        headless: true,
+      });
+    }
+    
+    // PRIORIDADE 3: Tentar Chromium baixado pelo puppeteer
+    this.logger.warn('Chrome não encontrado, tentando Chromium padrão...');
+    return puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      headless: true,
+    });
   }
 
   private loadTemplate(): HandlebarsTemplateDelegate {

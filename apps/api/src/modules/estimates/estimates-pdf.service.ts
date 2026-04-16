@@ -1,4 +1,3 @@
-// apps/api/src/modules/estimates/estimates-pdf.service.ts
 import {
   Injectable,
   Logger,
@@ -7,114 +6,98 @@ import {
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
+import * as puppeteer from 'puppeteer';
 
 @Injectable()
 export class EstimatesPdfService {
   private readonly logger = new Logger(EstimatesPdfService.name);
   private templateCache: HandlebarsTemplateDelegate | null = null;
 
-  constructor() {
-    this.logger.log('EstimatesPdfService inicializado');
-  }
-
+  // 🔥 BROWSER CONFIG PROFISSIONAL
   private async getBrowser() {
-    const isProduction = process.env.NODE_ENV === 'production';
-    const isWindows = process.platform === 'win32';
+    const chromePath =
+      process.env.CHROME_PATH ||
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
-    if (isProduction || !isWindows) {
-      // Produção ou Linux/Mac: usar @sparticuz/chromium
-      this.logger.log('Usando @sparticuz/chromium para PDF');
-      
-      const executablePath = await chromium.executablePath();
-      
-      // CORREÇÃO: chromium.args é uma função, não uma propriedade
-      const args = chromium.args || [];
-      
-      return puppeteer.launch({
-        args: [...args, '--no-sandbox', '--disable-setuid-sandbox'],
-        executablePath,
-        headless: true, // SEMPRE true em produção
-      });
-    } else {
-      // Desenvolvimento no Windows: tentar encontrar Chrome
-      const possiblePaths = [
-        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        process.env.CHROME_PATH,
-      ].filter(Boolean);
-
-      for (const chromePath of possiblePaths) {
-        if (chromePath && fs.existsSync(chromePath)) {
-          this.logger.log(`Chrome encontrado em: ${chromePath}`);
-          return puppeteer.launch({
-            executablePath: chromePath,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-            headless: true,
-          });
-        }
+    try {
+      // ✅ Chrome padrão
+      if (fs.existsSync(chromePath)) {
+        this.logger.log(`✅ Usando Chrome: ${chromePath}`);
+        return await puppeteer.launch({
+          executablePath: chromePath,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+          ],
+          headless: true,
+        });
       }
 
-      // Fallback: tentar sem caminho específico (pode baixar Chromium)
-      this.logger.warn('Chrome não encontrado, tentando puppeteer padrão');
-      const puppeteerDefault = await import('puppeteer');
-      return puppeteerDefault.launch({
+      // ✅ Chrome alternativo (32 bits)
+      const altPath =
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
+
+      if (fs.existsSync(altPath)) {
+        this.logger.log(`✅ Usando Chrome alternativo`);
+        return await puppeteer.launch({
+          executablePath: altPath,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+          ],
+          headless: true,
+        });
+      }
+
+      // ⚠️ fallback
+      this.logger.warn('⚠️ Chrome não encontrado, usando Chromium padrão');
+      return await puppeteer.launch({
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
         headless: true,
       });
-    }
-  }
-
-  private loadTemplate(): HandlebarsTemplateDelegate {
-    if (this.templateCache) {
-      return this.templateCache;
-    }
-
-    try {
-      let templatePath: string | null = null;
-      const possiblePaths = [
-        path.join(__dirname, 'estimates-pdf.hbs'),
-        path.join(__dirname, '..', 'estimates', 'estimates-pdf.hbs'),
-        path.join(process.cwd(), 'dist', 'modules', 'estimates', 'estimates-pdf.hbs'),
-        path.join(process.cwd(), 'src', 'modules', 'estimates', 'estimates-pdf.hbs'),
-      ];
-
-      for (const tryPath of possiblePaths) {
-        if (fs.existsSync(tryPath)) {
-          templatePath = tryPath;
-          this.logger.log(`Template encontrado em: ${tryPath}`);
-          break;
-        }
-      }
-
-      if (!templatePath) {
-        throw new Error(`Template não encontrado. Procurado em: ${possiblePaths.join(', ')}`);
-      }
-
-      const templateHtml = fs.readFileSync(templatePath, 'utf-8');
-      this.templateCache = Handlebars.compile(templateHtml);
-      return this.templateCache;
     } catch (error) {
-      this.logger.error('Erro ao carregar template de orçamento', error);
-      throw new InternalServerErrorException('Erro ao carregar template de PDF');
+      this.logger.error('Erro ao iniciar browser', error);
+      throw new InternalServerErrorException('Erro ao iniciar navegador PDF');
     }
   }
 
-  async generateEstimatePdf(estimate: any): Promise<Buffer> {
-    if (!estimate) {
-      throw new InternalServerErrorException('Dados inválidos para gerar PDF');
+  // 🔥 CACHE DE TEMPLATE
+  private loadTemplate(): HandlebarsTemplateDelegate {
+    if (this.templateCache) return this.templateCache;
+
+    const possiblePaths = [
+      path.join(process.cwd(), 'dist', 'modules', 'estimates', 'estimates-pdf.hbs'),
+      path.join(process.cwd(), 'src', 'modules', 'estimates', 'estimates-pdf.hbs'),
+    ];
+
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        this.logger.log(`📄 Template encontrado em: ${p}`);
+        const html = fs.readFileSync(p, 'utf-8');
+        this.templateCache = Handlebars.compile(html);
+        return this.templateCache;
+      }
     }
 
-    let browser = null;
-    
-    try {
-      const compiledTemplate = this.loadTemplate();
+    this.logger.error('❌ Template não encontrado');
+    throw new InternalServerErrorException('Template de orçamento não encontrado');
+  }
 
-      const client = estimate.client || {};
-      const tenant = estimate.tenant || {};
+  // 🔥 GERAÇÃO DE PDF
+  async generateEstimatePdf(estimate: any): Promise<Buffer> {
+    let browser = null;
+
+    try {
+      if (!estimate) {
+        throw new InternalServerErrorException('Dados inválidos para PDF');
+      }
+
+      const template = this.loadTemplate();
 
       let subtotal = 0;
+
       const items = (estimate.items || []).map((item: any) => {
         const quantity = Number(item.quantity) || 1;
         const price = Number(item.price) || 0;
@@ -123,50 +106,27 @@ export class EstimatesPdfService {
 
         return {
           description: item.description || '-',
-          quantity: quantity,
+          quantity,
           unitPrice: price.toFixed(2),
           total: total.toFixed(2),
         };
       });
 
-      const issueDateObj = estimate.date ? new Date(estimate.date) : new Date();
-      const validUntilObj = new Date(issueDateObj);
-      validUntilObj.setDate(validUntilObj.getDate() + 30);
-
-      const html = compiledTemplate({
+      const html = template({
         estimateNumber: estimate.id,
-        status: estimate.status === 'DRAFT' ? 'RASCUNHO' : estimate.status === 'SENT' ? 'ENVIADO' : 'APROVADO',
-        
-        client: {
-          name: client.name || 'Cliente não informado',
-          phone: client.phone || '-',
-          vehicle: client.vehicle || '-',
-          plate: client.plate || '-',
-          document: client.document || '-',
-          address: client.address || '-',
-        },
-        
-        items: items,
-        
+        client: estimate.client || {},
+        items,
         subtotal: subtotal.toFixed(2),
         total: subtotal.toFixed(2),
-        
-        companyName: tenant.name || 'MecPro',
-        companyDocument: tenant.documentNumber || 'CNPJ: --',
-        companyPhone: tenant.phone || '(11) 99999-9999',
-        companyEmail: tenant.email || 'contato@mecpro.com.br',
-        
-        issueDate: issueDateObj.toLocaleDateString('pt-BR'),
-        validUntil: validUntilObj.toLocaleDateString('pt-BR'),
+        companyName: estimate.tenant?.name || 'MecPro',
+        issueDate: new Date().toLocaleDateString('pt-BR'),
       });
 
-      this.logger.log(`Gerando PDF para orçamento ${estimate.id} (${items.length} itens)`);
+      this.logger.log(`🧾 Gerando PDF orçamento ${estimate.id}`);
 
-      // Inicia o browser com a configuração correta
       browser = await this.getBrowser();
-
       const page = await browser.newPage();
-      
+
       await page.setContent(html, {
         waitUntil: 'networkidle0',
         timeout: 30000,
@@ -183,12 +143,18 @@ export class EstimatesPdfService {
         },
       });
 
-      this.logger.log(`PDF gerado com sucesso: ${pdf.length} bytes`);
+      this.logger.log(`✅ PDF gerado (${pdf.length} bytes)`);
+
       return Buffer.from(pdf);
-      
     } catch (error) {
-      this.logger.error(`Erro ao gerar PDF para orçamento ${estimate.id}`, error);
-      throw new InternalServerErrorException(`Erro ao gerar PDF: ${error.message}`);
+      this.logger.error(
+        `❌ Erro ao gerar PDF orçamento ${estimate?.id}: ${error.message}`,
+        error.stack,
+      );
+
+      throw new InternalServerErrorException(
+        `Erro ao gerar PDF: ${error.message}`,
+      );
     } finally {
       if (browser) {
         await browser.close();

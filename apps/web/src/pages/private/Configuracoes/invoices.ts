@@ -1,10 +1,10 @@
-import api from "./api";
+import api from "../../../services/api";
 
 export interface InvoiceItem {
   description: string;
   quantity: number;
   price: number;
-  total?: number; // opcional, pode ser calculado no backend
+  total?: number;
 }
 
 export interface Invoice {
@@ -24,7 +24,7 @@ export interface CreateInvoiceData {
   clientId: number;
   estimateId?: number;
   number: string;
-  items: Omit<InvoiceItem, "total">[]; // backend pode calcular total
+  items: Omit<InvoiceItem, "total">[];
 }
 
 export const getInvoices = async (): Promise<Invoice[]> => {
@@ -51,7 +51,6 @@ export const deleteInvoice = async (id: number): Promise<void> => {
   await api.delete(`/invoices/${id}`);
 };
 
-// Função auxiliar para calcular total dos itens
 export function calculateInvoiceTotal(items: InvoiceItem[]): number {
   return items.reduce((acc, item) => acc + item.price * item.quantity, 0);
 }

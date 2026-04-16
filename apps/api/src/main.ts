@@ -3,6 +3,8 @@ process.env.TZ = 'America/Sao_Paulo';
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';

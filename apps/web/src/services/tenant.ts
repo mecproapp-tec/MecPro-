@@ -1,6 +1,6 @@
-import api from './api';
+import api from "./api";
 
-export async function updateTenant(data: {
+export interface UpdateTenantData {
   nome: string;
   documento: string;
   numero: string;
@@ -8,7 +8,13 @@ export async function updateTenant(data: {
   telefone: string;
   email: string;
   logo?: string;
-}) {
-  const response = await api.patch('/tenants/me', data);
-  return response.data;
+}
+
+function extractObject(data: any) {
+  return data?.data || data;
+}
+
+export async function updateTenant(data: UpdateTenantData): Promise<UpdateTenantData> {
+  const response = await api.patch("/tenants/me", data);
+  return extractObject(response.data);
 }

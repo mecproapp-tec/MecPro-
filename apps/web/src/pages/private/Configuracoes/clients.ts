@@ -1,4 +1,4 @@
-import api from "../../../services/api"; // caminho correto
+import api from "../../../services/api";
 
 export interface Client {
   id: number;

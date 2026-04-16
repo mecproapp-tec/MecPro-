@@ -2,18 +2,20 @@ import { Module } from '@nestjs/common';
 import { InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
 import { InvoicesPdfService } from './invoices-pdf.service';
-import { StorageService } from '../storage/storage.service';
-import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AuthModule } from '../../auth/auth.module';
+import { StorageModule } from '../storage/storage.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 
 @Module({
-  imports: [AuthModule], // ✅ simplificado, sem módulos não utilizados
+  imports: [
+    AuthModule,
+    StorageModule,
+    WhatsappModule,
+  ],
   controllers: [InvoicesController],
   providers: [
-    PrismaService,
     InvoicesService,
     InvoicesPdfService,
-    StorageService,
   ],
   exports: [InvoicesService, InvoicesPdfService],
 })

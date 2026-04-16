@@ -10,7 +10,7 @@ import {
   FiMessageCircle,
   FiEye,
 } from "react-icons/fi";
-import { getEstimates, deleteEstimate, updateEstimate, convertEstimate, type Estimate } from "../../../services/Estimates";
+import { getEstimates, deleteEstimate, updateEstimate, sendEstimateWhatsApp, type Estimate } from "../../../services/Estimates";
 import { getClientById, getVehicleDisplay, type Client } from "../../../services/clients";
 import api from "../../../services/api";
 
@@ -51,15 +51,45 @@ export default function Orcamentos() {
   const carregarDados = async () => {
     setLoading(true);
     try {
-      const estimatesData = await getEstimates();
+      const response = await getEstimates(1, 100);
+      
+      console.log("🔍 RESPOSTA COMPLETA:", response);
+      
+      let estimatesData: Estimate[] = [];
+      
+      if (Array.isArray(response)) {
+        estimatesData = response;
+      } else if (response && typeof response === 'object') {
+        if (Array.isArray(response.data)) {
+          estimatesData = response.data;
+        } else if (Array.isArray(response.estimates)) {
+          estimatesData = response.estimates;
+        } else if (Array.isArray(response.items)) {
+          estimatesData = response.items;
+        } else if (Array.isArray(response.data?.data)) {
+          estimatesData = response.data.data;
+        } else {
+          console.warn("Formato inesperado:", response);
+          estimatesData = [];
+        }
+      }
+      
+      console.log("📊 ORÇAMENTOS ENCONTRADOS:", estimatesData.length);
+      
       const convertedEstimates = estimatesData.map(est => ({
         ...est,
         status: reverseStatusMap[est.status] || est.status,
+        items: est.items || [],
+        total: typeof est.total === 'string' ? parseFloat(est.total) : (est.total || 0),
       }));
+      
       setOrcamentos(convertedEstimates);
       await carregarClientesFaltantes(convertedEstimates);
+      
     } catch (err: any) {
+      console.error("Erro ao carregar:", err);
       setError(err.response?.data?.message || "Erro ao carregar orçamentos");
+      setOrcamentos([]);
     } finally {
       setLoading(false);
     }
@@ -118,7 +148,12 @@ export default function Orcamentos() {
       const payload = {
         clientId: orcamento.clientId,
         date: orcamento.date,
-        items: orcamento.items,
+        items: orcamento.items.map(item => ({
+          description: item.description,
+          quantity: item.quantity || 1,
+          price: item.price,
+          issPercent: item.issPercent || 0,
+        })),
         status: statusMap[novoStatus],
       };
       await updateEstimate(orcamento.id, payload);
@@ -141,15 +176,58 @@ export default function Orcamentos() {
       return;
     }
 
+    const confirmar = confirm(`Deseja converter o orçamento #${orcamento.id} em fatura?`);
+    if (!confirmar) return;
+
+    const buttonElement = document.activeElement as HTMLElement;
+    if (buttonElement) {
+      buttonElement.style.opacity = '0.5';
+      buttonElement.style.pointerEvents = 'none';
+    }
+
     try {
-      await convertEstimate(orcamento.id);
-      setOrcamentos(prev =>
-        prev.map(o => (o.id === orcamento.id ? { ...o, status: "converted" } : o))
-      );
-      alert("Orçamento convertido em fatura com sucesso!");
+      console.log(`🔄 Convertendo orçamento ${orcamento.id}...`);
+      
+      const response = await api.post(`/estimates/${orcamento.id}/convert`);
+      
+      console.log("✅ Conversão realizada:", response.data);
+      
+      const result = response.data?.data || response.data;
+      const invoiceId = result?.invoiceId || result?.invoice?.id;
+      const invoiceNumber = result?.invoiceNumber || result?.invoice?.number;
+      
+      setOrcamentos(prev => prev.map(o => 
+        o.id === orcamento.id ? { ...o, status: "converted" } : o
+      ));
+      
+      if (invoiceId) {
+        const verFatura = confirm(
+          `✅ Orçamento #${orcamento.id} convertido em fatura #${invoiceNumber || invoiceId} com sucesso!\n\nDeseja visualizar a fatura agora?`
+        );
+        if (verFatura) {
+          navigate(`/faturas/${invoiceId}`);
+        }
+      } else {
+        alert(`✅ Orçamento #${orcamento.id} convertido em fatura com sucesso!`);
+        await carregarDados();
+      }
+      
     } catch (err: any) {
-      console.error("Erro na conversão:", err);
-      alert(err.response?.data?.message || "Erro ao converter orçamento em fatura");
+      console.error("❌ Erro na conversão:", err);
+      
+      if (err.code === 'ECONNABORTED') {
+        alert("A conversão está demorando mais que o normal. Verifique se a fatura foi criada na lista de faturas.");
+      } else if (err.response?.status === 401) {
+        alert("Sua sessão expirou. Por favor, recarregue a página e tente novamente.");
+        window.location.reload();
+      } else {
+        alert(err.response?.data?.message || "Erro ao converter orçamento em fatura");
+      }
+    } finally {
+      if (buttonElement) {
+        buttonElement.style.opacity = '';
+        buttonElement.style.pointerEvents = '';
+      }
     }
   };
 
@@ -159,16 +237,19 @@ export default function Orcamentos() {
       alert("Cliente não encontrado ou sem telefone");
       return;
     }
+    
     let telefone = cliente.phone.replace(/\D/g, "");
     if (telefone.length === 10 || telefone.length === 11) {
       telefone = "55" + telefone;
     }
+    
     try {
-      const response = await api.post(`/estimates/${orcamento.id}/send-whatsapp`, {
-        phoneNumber: telefone,
-      });
-      const { whatsappUrl } = response.data;
-      window.open(whatsappUrl, "_blank");
+      const result = await sendEstimateWhatsApp(orcamento.id, telefone);
+      if (result.whatsappUrl) {
+        window.open(result.whatsappUrl, "_blank");
+      } else {
+        alert("Mensagem enviada com sucesso!");
+      }
     } catch (error) {
       console.error("Erro ao enviar WhatsApp:", error);
       alert("Erro ao enviar mensagem. Tente novamente.");
@@ -229,7 +310,7 @@ export default function Orcamentos() {
                 </thead>
                 <tbody>
                   ${orcamento.items.map(item => {
-                    const itemTotal = item.price * (item.quantity || 1);
+                    const itemTotal = (item.price || 0) * (item.quantity || 1);
                     const iss = item.issPercent ? itemTotal * (item.issPercent / 100) : 0;
                     return `
                       <tr>
@@ -244,13 +325,13 @@ export default function Orcamentos() {
                 <tfoot>
                   <tr class="total-row">
                     <td colspan="3" style="text-align: right;"><strong>Total Geral</strong></td>
-                    <td class="valor"><strong>${orcamento.total.toFixed(2)}</strong></td>
+                    <td class="valor"><strong>${Number(orcamento.total).toFixed(2)}</strong></td>
                   </tr>
                 </tfoot>
               </table>
             </div>
             <div class="total-geral">
-              <strong>Total: R$ ${orcamento.total.toFixed(2)}</strong>
+              <strong>Total: R$ ${Number(orcamento.total).toFixed(2)}</strong>
             </div>
           </body>
         </html>
@@ -267,7 +348,7 @@ export default function Orcamentos() {
 
   const totalGeral = orcamentos
     .filter(o => o.status !== "converted")
-    .reduce((acc, o) => acc + o.total, 0);
+    .reduce((acc, o) => acc + Number(o.total), 0);
 
   if (loading) {
     return (
@@ -281,6 +362,7 @@ export default function Orcamentos() {
     return (
       <div style={styles.errorContainer}>
         <div style={styles.error}>{error}</div>
+        <button onClick={carregarDados} style={styles.retryButton}>Tentar novamente</button>
       </div>
     );
   }
@@ -351,7 +433,7 @@ export default function Orcamentos() {
                       <td style={styles.td}>{cliente ? getVehicleDisplay(cliente) : "Não informado"}</td>
                       <td style={styles.td}>{cliente?.plate || ""}</td>
                       <td style={styles.td}>{new Date(o.date).toLocaleDateString("pt-BR")}</td>
-                      <td style={{ ...styles.td, textAlign: "right", color: "#00e5ff", fontWeight: "600" }}>R$ {o.total.toFixed(2)}</td>
+                      <td style={{ ...styles.td, textAlign: "right", color: "#00e5ff", fontWeight: "600" }}>R$ {Number(o.total).toFixed(2)}</td>
                       <td style={styles.td}>
                         {o.status === "converted" ? (
                           <span style={styles.convertedStatus}>{getStatusLabel(o.status)}</span>
@@ -632,11 +714,23 @@ const styles = {
     background: "linear-gradient(145deg, #0a0a0a 0%, #000000 100%)",
     minHeight: "100vh",
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
+    gap: "20px",
   },
   error: {
     color: "#ff4444",
     fontSize: "18px",
+  },
+  retryButton: {
+    background: "#00e5ff",
+    color: "#000",
+    border: "none",
+    padding: "12px 24px",
+    borderRadius: "100px",
+    cursor: "pointer",
+    fontWeight: "600",
+    fontSize: "14px",
   },
 };

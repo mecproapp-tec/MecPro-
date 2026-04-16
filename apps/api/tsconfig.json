@@ -1,4 +1,4 @@
-{
+﻿{
   "compilerOptions": {
     "module": "commonjs",
     "declaration": true,
@@ -10,20 +10,21 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-
-    
-    "paths": {
-      "@/*": ["src/*"]
-    },
-
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false
+    "noFallthroughCasesInSwitch": false,
+    "esModuleInterop": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.spec.ts",
+    "**/*.test.ts",
+    "temp_tests"
+  ]
 }

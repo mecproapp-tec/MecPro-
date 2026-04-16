@@ -1,103 +1,135 @@
+// src/modules/storage/storage.service.ts
 import { Injectable, Logger, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
-  private s3: S3Client;
-  private bucket: string;
-  private publicUrl: string;
+  private s3Client: S3Client | null = null;
+  private bucket: string | null = null;
+  private publicUrl: string | null = null;
+  private useR2: boolean = false;
+  private localUploadPath: string;
 
-  constructor() {
-    this.bucket = process.env.CLOUDFLARE_R2_BUCKET_NAME!;
-    this.publicUrl = process.env.CLOUDFLARE_R2_PUBLIC_URL!;
+  constructor(private configService: ConfigService) {
+    this.localUploadPath = path.join(process.cwd(), 'uploads', 'pdfs');
+    this.ensureLocalDirectory();
 
-    if (
-      !this.bucket ||
-      !this.publicUrl ||
-      !process.env.CLOUDFLARE_R2_ENDPOINT ||
-      !process.env.CLOUDFLARE_R2_ACCESS_KEY_ID ||
-      !process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY
-    ) {
-      throw new Error('❌ R2 não configurado corretamente no .env');
+    const endpoint = this.configService.get('CLOUDFLARE_R2_ENDPOINT');
+    const accessKeyId = this.configService.get('CLOUDFLARE_R2_ACCESS_KEY_ID');
+    const secretAccessKey = this.configService.get('CLOUDFLARE_R2_SECRET_ACCESS_KEY');
+    this.bucket = this.configService.get('CLOUDFLARE_R2_BUCKET_NAME');
+    this.publicUrl = this.configService.get('CLOUDFLARE_R2_PUBLIC_URL');
+
+    if (endpoint && accessKeyId && secretAccessKey && this.bucket && this.publicUrl) {
+      this.s3Client = new S3Client({
+        region: 'auto',
+        endpoint,
+        credentials: { accessKeyId, secretAccessKey },
+        forcePathStyle: true,
+      });
+      this.useR2 = true;
+      this.logger.log('✅ Cloudflare R2 configurado e ativo');
+    } else {
+      this.logger.warn('⚠️ Cloudflare R2 não configurado. Usando armazenamento local.');
     }
+  }
 
-    this.s3 = new S3Client({
-      region: 'auto',
-      endpoint: process.env.CLOUDFLARE_R2_ENDPOINT,
-      credentials: {
-        accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY!,
-      },
-      forcePathStyle: true,
-    });
-    this.logger.log(`✅ R2 conectado: bucket ${this.bucket}`);
+  private ensureLocalDirectory(): void {
+    if (!fs.existsSync(this.localUploadPath)) {
+      fs.mkdirSync(this.localUploadPath, { recursive: true });
+      this.logger.log(`📁 Diretório local criado: ${this.localUploadPath}`);
+    }
   }
 
   async uploadPdf(buffer: Buffer, key: string): Promise<string> {
     if (!buffer || buffer.length === 0) {
-      throw new InternalServerErrorException('Buffer inválido');
+      throw new InternalServerErrorException('Buffer inválido para upload');
     }
 
-    if (!key.toLowerCase().includes('.pdf')) {
-      throw new InternalServerErrorException(
-        'Key inválida: precisa terminar com .pdf (ex: pasta/arquivo.pdf)',
-      );
+    // Garante extensão .pdf
+    const normalizedKey = key.toLowerCase().endsWith('.pdf') ? key : `${key}.pdf`;
+
+    if (this.useR2 && this.s3Client && this.bucket && this.publicUrl) {
+      try {
+        await this.s3Client.send(
+          new PutObjectCommand({
+            Bucket: this.bucket,
+            Key: normalizedKey,
+            Body: buffer,
+            ContentType: 'application/pdf',
+            CacheControl: 'no-store',
+          }),
+        );
+        const url = `${this.publicUrl}/${normalizedKey}`;
+        this.logger.log(`✅ PDF enviado para R2: ${url} (${buffer.length} bytes)`);
+        return url;
+      } catch (error) {
+        this.logger.error(`❌ Falha no upload R2: ${error.message}. Usando fallback local.`);
+        // Fallback para local
+        return this.uploadPdfLocal(buffer, normalizedKey);
+      }
     }
 
-    try {
-      await this.s3.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-          Body: buffer,
-          ContentType: 'application/pdf',
-        }),
-      );
+    return this.uploadPdfLocal(buffer, normalizedKey);
+  }
 
-      const url = `${this.publicUrl}/${key}`;
-      this.logger.log(`✅ Upload R2 OK: ${url} (${buffer.length} bytes)`);
-      return url;
-    } catch (error) {
-      this.logger.error(`❌ Erro no upload R2: ${error.message}`, error.stack);
-      throw new InternalServerErrorException(`Falha no upload: ${error.message}`);
-    }
+  private async uploadPdfLocal(buffer: Buffer, key: string): Promise<string> {
+    const localPath = path.join(this.localUploadPath, key);
+    const dir = path.dirname(localPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(localPath, buffer);
+    const baseUrl = this.configService.get('API_URL') || 'http://localhost:3000';
+    const cleanBaseUrl = baseUrl.replace(/\/api$/, '');
+    const localUrl = `${cleanBaseUrl}/api/storage/${key}`;
+    this.logger.log(`📁 PDF salvo localmente: ${localPath} -> ${localUrl}`);
+    return localUrl;
   }
 
   async getFile(key: string): Promise<Buffer> {
-    try {
-      const response = await this.s3.send(
-        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-      );
-      const stream = response.Body as import('stream').Readable;
-
-      return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-        stream.on('end', () => resolve(Buffer.concat(chunks)));
-        stream.on('error', (err) => {
-          stream.destroy();
-          reject(err);
+    if (this.useR2 && this.s3Client && this.bucket) {
+      try {
+        const response = await this.s3Client.send(
+          new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+        );
+        const stream = response.Body as import('stream').Readable;
+        return new Promise((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+          stream.on('end', () => resolve(Buffer.concat(chunks)));
+          stream.on('error', reject);
         });
-      });
-    } catch (error) {
-      this.logger.error(`❌ Erro ao buscar arquivo: ${key}`, error);
-      throw new NotFoundException('Arquivo não encontrado');
+      } catch (error) {
+        this.logger.warn(`Arquivo não encontrado no R2: ${key}, tentando local...`);
+      }
     }
+
+    const localPath = path.join(this.localUploadPath, key);
+    if (fs.existsSync(localPath)) {
+      return fs.readFileSync(localPath);
+    }
+    throw new NotFoundException(`Arquivo não encontrado: ${key}`);
   }
 
   async deleteFile(key: string): Promise<void> {
-    try {
-      await this.s3.send(
-        new DeleteObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-        }),
-      );
-      this.logger.log(`✅ Arquivo deletado: ${key}`);
-    } catch (error) {
-      this.logger.error(`❌ Erro ao deletar arquivo: ${key}`, error);
-      throw new InternalServerErrorException(`Falha ao deletar: ${error.message}`);
+    if (this.useR2 && this.s3Client && this.bucket) {
+      try {
+        await this.s3Client.send(
+          new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+        );
+        this.logger.log(`🗑️ Arquivo removido do R2: ${key}`);
+      } catch (error) {
+        this.logger.error(`Erro ao deletar do R2: ${error.message}`);
+      }
+    }
+
+    const localPath = path.join(this.localUploadPath, key);
+    if (fs.existsSync(localPath)) {
+      fs.unlinkSync(localPath);
+      this.logger.log(`🗑️ Arquivo local removido: ${localPath}`);
     }
   }
 }

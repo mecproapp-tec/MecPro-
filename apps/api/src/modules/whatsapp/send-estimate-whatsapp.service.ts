@@ -3,7 +3,6 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EstimatesPdfService } from '../estimates/estimates-pdf.service';
 import { StorageService } from '../storage/storage.service';
 import { WhatsappService } from './whatsapp.service';
-import { buildEstimateMessage } from '../estimates/estimate-message.util';
 
 @Injectable()
 export class SendEstimateWhatsappService {
@@ -16,14 +15,11 @@ export class SendEstimateWhatsappService {
     private readonly whatsappService: WhatsappService,
   ) {}
 
-  // 🔥 CENTRALIZA PDF (EVITA DUPLICAÇÃO)
   private async ensurePdf(estimate: any) {
     if (estimate.pdfUrl) return estimate;
 
     const pdfBuffer = await this.pdfService.generateEstimatePdf(estimate);
-
     const pdfKey = `${estimate.tenantId}/estimates/${estimate.id}.pdf`;
-
     const pdfUrl = await this.storageService.uploadPdf(pdfBuffer, pdfKey);
 
     const updated = await this.prisma.estimate.update({
@@ -53,23 +49,11 @@ export class SendEstimateWhatsappService {
       throw new NotFoundException('Cliente sem telefone');
     }
 
-    // 🔥 GARANTE PDF (SEM DUPLICAR)
     const updated = await this.ensurePdf(estimate);
+    const result = await this.whatsappService.sendEstimate(updated, updated.pdfUrl);
 
-    // 🔥 USA PADRÃO CENTRAL
-    const msg = buildEstimateMessage(updated, updated.pdfUrl);
+    this.logger.log(`📲 WhatsApp enviado para orçamento ${estimate.id}`);
 
-    const whatsappLink = this.whatsappService.generateWhatsAppLink(
-      updated.client.phone,
-      msg.text,
-    );
-
-    this.logger.log(`📲 WhatsApp gerado para orçamento ${estimate.id}`);
-
-    return {
-      success: true,
-      whatsappLink,
-      message: msg.text,
-    };
+    return result;
   }
 }

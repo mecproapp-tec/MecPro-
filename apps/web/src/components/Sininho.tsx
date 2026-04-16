@@ -8,11 +8,8 @@ export default function Sininho() {
   useEffect(() => {
     const fetchNotificacoes = async () => {
       try {
-        console.log('Buscando notificações...');
         const data = await getNotifications();
-        console.log('Dados recebidos:', data);
         const naoLidas = Array.isArray(data) ? data.filter((n) => !n.read).length : 0;
-        console.log('Não lidas:', naoLidas);
         setTotal(naoLidas);
       } catch (error) {
         console.error("Erro ao carregar notificações", error);

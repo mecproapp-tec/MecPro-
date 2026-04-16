@@ -4,7 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { PrismaModule } from '../shared/prisma/prisma.module';
-import { PaymentModule } from '../payments/payment.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
@@ -37,7 +37,7 @@ import { RolesGuard } from './roles.guard';
       }),
     }),
 
-    PaymentModule,
+    PaymentsModule,
   ],
 
   controllers: [AuthController],

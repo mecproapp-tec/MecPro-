@@ -1,3 +1,4 @@
+// src/modules/estimates/estimates-whatsapp.service.ts
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EstimatesPdfService } from './estimates-pdf.service';
@@ -23,7 +24,12 @@ export class EstimatesWhatsappService {
     const pdfUrl = await this.storageService.uploadPdf(pdfBuffer, pdfKey);
     const updated = await this.prisma.estimate.update({
       where: { id: estimate.id },
-      data: { pdfUrl, pdfKey, pdfStatus: 'generated', pdfGeneratedAt: new Date() },
+      data: {
+        pdfUrl: pdfUrl,
+        pdfKey: pdfKey,
+        pdfStatus: 'generated',
+        pdfGeneratedAt: new Date(),
+      },
     });
     return { ...estimate, ...updated };
   }

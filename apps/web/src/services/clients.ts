@@ -3,39 +3,42 @@ import api from "./api";
 export interface Client {
   id: number;
   name: string;
-  phone: string;
-  vehicle: string;
-  plate: string;
+  vehicle?: string;
+  plate?: string;
+  phone?: string;
+  email?: string;
   address?: string;
   document?: string;
-  createdAt: string;
-  updatedAt?: string;
 }
 
-export const getClients = async (): Promise<Client[]> => {
+export async function getClients(): Promise<Client[]> {
   const response = await api.get("/clients");
-  return response.data;
-};
+  if (Array.isArray(response.data)) return response.data;
+  if (response.data?.data && Array.isArray(response.data.data)) return response.data.data;
+  if (response.data?.clients && Array.isArray(response.data.clients)) return response.data.clients;
+  return [];
+}
 
-export const getClientById = async (id: number): Promise<Client> => {
+export async function getClientById(id: number): Promise<Client> {
   const response = await api.get(`/clients/${id}`);
-  return response.data;
-};
+  return response.data?.data || response.data;
+}
 
-export const createClient = async (data: Omit<Client, "id" | "createdAt" | "updatedAt">): Promise<Client> => {
-  const response = await api.post("/clients", data);
-  return response.data;
-};
+export async function createClient(clientData: Omit<Client, "id">): Promise<Client> {
+  const response = await api.post("/clients", clientData);
+  return response.data?.data || response.data;
+}
 
-export const updateClient = async (id: number, data: Partial<Omit<Client, "id" | "createdAt" | "updatedAt">>): Promise<Client> => {
-  const response = await api.put(`/clients/${id}`, data);
-  return response.data;
-};
+export async function updateClient(id: number, clientData: Partial<Client>): Promise<Client> {
+  const response = await api.put(`/clients/${id}`, clientData);
+  return response.data?.data || response.data;
+}
 
-export const deleteClient = async (id: number): Promise<void> => {
+export async function deleteClient(id: number): Promise<void> {
   await api.delete(`/clients/${id}`);
-};
+}
 
-export const getVehicleDisplay = (client: Client): string => {
-  return client.vehicle || "Não informado";
-};
+export function getVehicleDisplay(client: Client): string {
+  if (!client.vehicle && !client.plate) return "Não informado";
+  return `${client.vehicle || ""} ${client.plate || ""}`.trim();
+}

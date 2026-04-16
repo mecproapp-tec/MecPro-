@@ -1,24 +1,48 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
 export class WhatsappService {
-  generateWhatsAppLink(phone: string, message: string): string {
-    if (!phone) {
-      throw new BadRequestException('Telefone é obrigatório');
-    }
+  private readonly logger = new Logger(WhatsappService.name);
 
-    const cleanPhone = phone.replace(/\D/g, '');
+  private formatPhone(phoneNumber: string): string {
+    return phoneNumber.replace(/\D/g, '');
+  }
 
-    if (!cleanPhone) {
-      throw new BadRequestException('Telefone inválido');
-    }
+  generateWhatsAppLink(phoneNumber: string, message: string): string {
+    const cleanPhone = this.formatPhone(phoneNumber);
+    const encodedMessage = encodeURIComponent(message);
+    return `https://wa.me/55${cleanPhone}?text=${encodedMessage}`;
+  }
 
-    const formattedPhone = cleanPhone.startsWith('55')
-      ? cleanPhone
-      : `55${cleanPhone}`;
+  async sendInvoice(invoice: any, shareUrl: string) {
+    const message = `📄 *FATURA MECPRO #${invoice.number}*
+👤 *Cliente:* ${invoice.client?.name || '-'}
+🚗 *Veículo:* ${invoice.client?.vehicle || '-'}
+💰 *Total:* R$ ${Number(invoice.total).toFixed(2)}
+🔗 *Link:* ${shareUrl}
 
-    const encodedMessage = encodeURIComponent(message.trim());
+MecPro - Gestão para Oficinas`;
 
-    return `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+    const link = this.generateWhatsAppLink(invoice.client.phone, message);
+
+    this.logger.log(`📲 Fatura enviada ${invoice.id}`);
+
+    return { success: true, whatsappUrl: link, message };
+  }
+
+  async sendEstimate(estimate: any, shareUrl: string) {
+    const message = `📄 *ORÇAMENTO MECPRO #${estimate.id}*
+👤 *Cliente:* ${estimate.client?.name || '-'}
+🚗 *Veículo:* ${estimate.client?.vehicle || '-'}
+💰 *Total:* R$ ${Number(estimate.total).toFixed(2)}
+🔗 *Link:* ${shareUrl}
+
+MecPro - Sua oficina de confiança`;
+
+    const link = this.generateWhatsAppLink(estimate.client.phone, message);
+
+    this.logger.log(`📲 Orçamento enviado ${estimate.id}`);
+
+    return { success: true, whatsappUrl: link, message };
   }
 }

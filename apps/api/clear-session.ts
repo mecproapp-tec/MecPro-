@@ -1,18 +1,11 @@
-import { PrismaClient } from '@prisma/client';
-
+const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-async function clearSession() {
-  const email = 'seuemail@exemplo.com'; // <-- altere para o seu email
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    console.log('Usuário não encontrado');
-    return;
-  }
-  const result = await prisma.userSession.deleteMany({ where: { userId: user.id } });
-  console.log(`Sessões removidas: ${result.count}`);
+async function clearRefreshToken() {
+  const deleted = await prisma.$executeRawUnsafe('DELETE FROM "RefreshToken";');
+  console.log(`✅ ${deleted} registros deletados da tabela RefreshToken.`);
 }
 
-clearSession()
+clearRefreshToken()
   .catch(console.error)
   .finally(() => prisma.$disconnect());

@@ -1,11 +1,14 @@
 // src/webhook/webhook.controller.ts
-import { Controller, Post, Body, Headers, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body, Headers, BadRequestException, Logger } from '@nestjs/common';
 import { PaymentService } from '../payments/payment.service';
 import { PrismaService } from '../shared/prisma/prisma.service';
 import * as crypto from 'crypto';
+import { randomUUID } from 'crypto';
 
 @Controller('webhook')
 export class WebhookController {
+  private readonly logger = new Logger(WebhookController.name);
+
   constructor(
     private paymentService: PaymentService,
     private prisma: PrismaService,
@@ -16,7 +19,6 @@ export class WebhookController {
     @Body() body: any,
     @Headers('x-signature') signature: string,
   ) {
-    // Validação da assinatura (se configurada)
     const secret = process.env.MP_WEBHOOK_SECRET;
     if (secret && signature) {
       const expectedSignature = crypto
@@ -24,22 +26,19 @@ export class WebhookController {
         .update(JSON.stringify(body))
         .digest('hex');
       if (signature !== expectedSignature) {
-        console.warn('Assinatura inválida, ignorando webhook');
+        this.logger.warn('Assinatura inválida, ignorando webhook');
         throw new BadRequestException('Assinatura inválida');
       }
     }
 
-    console.log('📩 Webhook recebido:', JSON.stringify(body, null, 2));
+    this.logger.log(`Webhook recebido: ${JSON.stringify(body)}`);
 
     const { type, data } = body;
 
-    // ========== ASSINATURA RECORRENTE ==========
     if (type === 'preapproval') {
       try {
-        // Busca a assinatura no Mercado Pago
-        const mpSubscription = await this.paymentService.getSubscription(data.id);
+        const mpSubscription: any = await this.paymentService.getSubscription(data.id);
 
-        // 1. Localiza o pendingSubscription
         let pendingSub = null;
         if (mpSubscription.external_reference) {
           pendingSub = await this.prisma.pendingSubscription.findUnique({
@@ -53,11 +52,10 @@ export class WebhookController {
         }
 
         if (!pendingSub) {
-          console.warn('⚠️ Nenhum pendingSubscription encontrado para assinatura:', mpSubscription.id);
+          this.logger.warn(`Nenhum pendingSubscription encontrado para assinatura: ${mpSubscription.id}`);
           return { received: true };
         }
 
-        // 2. Localiza o tenant
         let tenant = null;
         if (pendingSub.tenantId) {
           tenant = await this.prisma.tenant.findUnique({
@@ -71,11 +69,10 @@ export class WebhookController {
         }
 
         if (!tenant) {
-          console.warn('⚠️ Tenant não encontrado para pendingSubscription:', pendingSub.id);
+          this.logger.warn(`Tenant não encontrado para pendingSubscription: ${pendingSub.id}`);
           return { received: true };
         }
 
-        // 3. Mapeia status do Mercado Pago para os campos internos
         let tenantStatus: 'ACTIVE' | 'BLOCKED' | 'CANCELED' = 'BLOCKED';
         let paymentStatus = 'expired';
         let subscriptionStatus: 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED' = 'CANCELED';
@@ -97,13 +94,11 @@ export class WebhookController {
             subscriptionStatus = 'CANCELED';
             break;
           default:
-            // outros: pending, in_process, etc.
             tenantStatus = 'BLOCKED';
             paymentStatus = 'pending';
             subscriptionStatus = 'PAST_DUE';
         }
 
-        // 4. Atualiza o tenant
         await this.prisma.tenant.update({
           where: { id: tenant.id },
           data: {
@@ -116,12 +111,12 @@ export class WebhookController {
           },
         });
 
-        // 5. Cria ou atualiza o registro em Subscription
+        // CORRIGIDO: subscriptions -> subscription
         const existingSub = await this.prisma.subscription.findFirst({
           where: { tenantId: tenant.id },
         });
 
-        const subscriptionData = {
+        const subscriptionData: any = {
           gatewaySubscriptionId: mpSubscription.id,
           status: subscriptionStatus,
           endDate: mpSubscription.next_payment_date
@@ -130,16 +125,19 @@ export class WebhookController {
         };
 
         if (existingSub) {
+          // CORRIGIDO: subscriptions -> subscription
           await this.prisma.subscription.update({
             where: { id: existingSub.id },
             data: subscriptionData,
           });
         } else {
+          // CORRIGIDO: subscriptions -> subscription, removido as any
           await this.prisma.subscription.create({
             data: {
+              id: randomUUID(),
               tenantId: tenant.id,
               planName: mpSubscription.preapproval_plan_id || 'PLANO_BASICO',
-              price: 0, // se tiver preço, ajuste conforme seu plano
+              price: 0,
               status: subscriptionStatus,
               gateway: 'MERCADOPAGO',
               gatewaySubscriptionId: mpSubscription.id,
@@ -151,7 +149,6 @@ export class WebhookController {
           });
         }
 
-        // 6. Atualiza a pendingSubscription para pago
         await this.prisma.pendingSubscription.update({
           where: { id: pendingSub.id },
           data: {
@@ -161,23 +158,20 @@ export class WebhookController {
           },
         });
 
-        console.log(`💰 Tenant ${tenant.id} atualizado: status=${tenantStatus}, payment=${paymentStatus}`);
+        this.logger.log(`Tenant ${tenant.id} atualizado: status=${tenantStatus}, payment=${paymentStatus}`);
       } catch (error) {
-        console.error('Erro ao processar webhook de assinatura:', error);
+        this.logger.error(`Erro ao processar webhook de assinatura: ${error.message}`);
       }
     }
 
-    // ========== PAGAMENTO ÚNICO (opcional) ==========
     if (type === 'payment') {
       try {
-        const payment = await this.paymentService.getPayment(data.id);
+        const payment: any = await this.paymentService.getPayment(data.id);
         if (payment.status === 'approved' && payment.payer?.email) {
-          console.log(`✅ Pagamento aprovado para ${payment.payer.email}`);
-          // Opcional: registrar no model Payment
-          // Você pode usar external_reference para saber qual tenant
+          this.logger.log(`Pagamento aprovado para ${payment.payer.email}`);
         }
       } catch (error) {
-        console.error('Erro ao processar webhook de pagamento:', error);
+        this.logger.error(`Erro ao processar webhook de pagamento: ${error.message}`);
       }
     }
 

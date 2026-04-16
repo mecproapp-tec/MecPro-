@@ -1,3 +1,4 @@
+// src/modules/common/queues/pdf.processor.ts
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Injectable, Logger } from '@nestjs/common';
@@ -33,7 +34,12 @@ export class PdfProcessor extends WorkerHost {
       const url = await this.storage.uploadPdf(pdfBuffer, key);
       await this.prisma.invoice.update({
         where: { id },
-        data: { pdfUrl: url, pdfKey: key, pdfStatus: 'generated', pdfGeneratedAt: new Date() },
+        data: { 
+          pdfUrl: url, 
+          pdfKey: key, 
+          pdfStatus: 'generated', 
+          pdfGeneratedAt: new Date() 
+        },
       });
     } else {
       const estimate = await this.prisma.estimate.findUnique({
@@ -45,7 +51,12 @@ export class PdfProcessor extends WorkerHost {
       const url = await this.storage.uploadPdf(pdfBuffer, key);
       await this.prisma.estimate.update({
         where: { id },
-        data: { pdfUrl: url, pdfKey: key, pdfStatus: 'generated', pdfGeneratedAt: new Date() },
+        data: { 
+          pdfUrl: url, 
+          pdfKey: key, 
+          pdfStatus: 'generated', 
+          pdfGeneratedAt: new Date() 
+        },
       });
     }
     return { success: true };

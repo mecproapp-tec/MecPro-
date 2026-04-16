@@ -1,4 +1,3 @@
-// apps/web/src/pages/private/Agenda/VerAgendamento.tsx
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
