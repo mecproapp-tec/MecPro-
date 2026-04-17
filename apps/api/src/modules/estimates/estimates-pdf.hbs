@@ -57,9 +57,14 @@
     border: 1px solid #e0e0e0;
   }
   .client-box h3 {
-    color: #0d47a1;
+    background: #0a0a0a;
+    color: #00e5ff;
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 14px;
     margin-bottom: 15px;
-    font-size: 16px;
+    letter-spacing: 0.5px;
   }
   .client-grid {
     display: grid;
@@ -75,15 +80,15 @@
     min-width: 80px;
   }
   .dates {
+    background: #0a0a0a;
+    color: #00e5ff;
     display: flex;
     justify-content: space-between;
-    background: #e3f2fd;
     padding: 12px 20px;
     border-radius: 12px;
     margin-bottom: 25px;
     font-size: 13px;
     font-weight: 500;
-    color: #0d47a1;
   }
   table {
     width: 100%;
@@ -92,8 +97,8 @@
     font-size: 13px;
   }
   th {
-    background: #0d47a1;
-    color: white;
+    background: #0a0a0a;
+    color: #00e5ff;
     padding: 12px;
     text-align: left;
     font-weight: 600;
@@ -102,12 +107,8 @@
     padding: 12px;
     border-bottom: 1px solid #e0e0e0;
   }
-  .text-right {
-    text-align: right;
-  }
-  .text-center {
-    text-align: center;
-  }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
   .totals {
     margin-top: 25px;
     text-align: right;
@@ -118,7 +119,7 @@
     margin: 5px 0;
     font-size: 14px;
   }
-  .totals .total-geral {
+  .total-geral {
     font-size: 22px;
     font-weight: bold;
     color: #00e5ff;
@@ -148,14 +149,11 @@
 <div class="document">
   <div class="header">
     <h1>ORÇAMENTO Nº {{estimateNumber}}</h1>
-    <!-- Status removido – não exibimos mais "RASCUNHO" -->
   </div>
   
   <div class="body">
     <div class="company-info">
-      {{#if companyLogo}}
-        <img src="{{companyLogo}}" class="logo" alt="Logo">
-      {{/if}}
+      {{#if companyLogo}}<img src="{{companyLogo}}" class="logo" alt="Logo">{{/if}}
       <h2>{{companyName}}</h2>
       <p>{{companyDocument}} | {{companyPhone}}</p>
       <p>{{companyEmail}}</p>
@@ -163,7 +161,7 @@
     </div>
     
     <div class="client-box">
-      <h3>📋 DADOS DO CLIENTE</h3>
+      <h3>DADOS DO CLIENTE</h3>
       <div class="client-grid">
         <div class="client-item"><strong>Nome:</strong> {{client.name}}</div>
         <div class="client-item"><strong>Telefone:</strong> {{client.phone}}</div>
@@ -175,8 +173,8 @@
     </div>
     
     <div class="dates">
-      <span>📅 Emissão: {{issueDate}}</span>
-      <span>⏰ Validade: {{validUntil}}</span>
+      <span>Emissão: {{issueDate}}</span>
+      <span>Validade: {{validUntil}}</span>
     </div>
     
     <table>

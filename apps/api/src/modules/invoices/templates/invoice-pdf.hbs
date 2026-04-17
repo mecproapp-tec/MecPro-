@@ -55,7 +55,12 @@
     border: 1px solid #e0e0e0;
   }
   .client-box h3 {
-    color: #0d47a1;
+    background: #0a0a0a;
+    color: #00e5ff;
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 14px;
     margin-bottom: 15px;
   }
   .client-grid {
@@ -68,15 +73,15 @@
     display: inline-block;
   }
   .dates {
+    background: #0a0a0a;
+    color: #00e5ff;
     display: flex;
     justify-content: space-between;
-    background: #e3f2fd;
     padding: 12px 20px;
     border-radius: 12px;
     margin-bottom: 25px;
     font-size: 13px;
     font-weight: 500;
-    color: #0d47a1;
   }
   table {
     width: 100%;
@@ -85,8 +90,8 @@
     font-size: 13px;
   }
   th {
-    background: #0d47a1;
-    color: white;
+    background: #0a0a0a;
+    color: #00e5ff;
     padding: 12px;
     text-align: left;
   }
@@ -144,7 +149,7 @@
     </div>
     
     <div class="client-box">
-      <h3>📋 DADOS DO CLIENTE</h3>
+      <h3>DADOS DO CLIENTE</h3>
       <div class="client-grid">
         <div class="client-item"><strong>Nome:</strong> {{client.name}}</div>
         <div class="client-item"><strong>Telefone:</strong> {{client.phone}}</div>
@@ -156,8 +161,8 @@
     </div>
     
     <div class="dates">
-      <span>📅 Emissão: {{issueDate}}</span>
-      <span>⏰ Vencimento: {{dueDate}}</span>
+      <span>Emissão: {{issueDate}}</span>
+      <span>Vencimento: {{dueDate}}</span>
     </div>
     
     <table>
