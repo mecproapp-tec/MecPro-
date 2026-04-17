@@ -1,4 +1,3 @@
-// src/modules/storage/storage.service.ts
 import { Injectable, Logger, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
@@ -24,17 +23,33 @@ export class StorageService {
     this.bucket = this.configService.get('CLOUDFLARE_R2_BUCKET_NAME');
     this.publicUrl = this.configService.get('CLOUDFLARE_R2_PUBLIC_URL');
 
-    if (endpoint && accessKeyId && secretAccessKey && this.bucket && this.publicUrl) {
-      this.s3Client = new S3Client({
-        region: 'auto',
-        endpoint,
-        credentials: { accessKeyId, secretAccessKey },
-        forcePathStyle: true,
-      });
-      this.useR2 = true;
-      this.logger.log('✅ Cloudflare R2 configurado e ativo');
+    // Verifica se todas as variáveis necessárias estão presentes
+    const hasAllConfig = endpoint && accessKeyId && secretAccessKey && this.bucket && this.publicUrl;
+    
+    if (hasAllConfig) {
+      try {
+        this.s3Client = new S3Client({
+          region: 'auto',
+          endpoint,
+          credentials: { accessKeyId, secretAccessKey },
+          forcePathStyle: true,
+        });
+        this.useR2 = true;
+        this.logger.log('✅ Cloudflare R2 configurado e ativo');
+        this.logger.log(`   Endpoint: ${endpoint}`);
+        this.logger.log(`   Bucket: ${this.bucket}`);
+        this.logger.log(`   Public URL: ${this.publicUrl}`);
+      } catch (error) {
+        this.logger.error(`❌ Erro ao configurar cliente R2: ${error.message}`);
+        this.useR2 = false;
+      }
     } else {
-      this.logger.warn('⚠️ Cloudflare R2 não configurado. Usando armazenamento local.');
+      this.logger.warn('⚠️ Cloudflare R2 não configurado (variáveis faltando). Usando armazenamento local.');
+      if (!endpoint) this.logger.warn('  - CLOUDFLARE_R2_ENDPOINT ausente');
+      if (!accessKeyId) this.logger.warn('  - CLOUDFLARE_R2_ACCESS_KEY_ID ausente');
+      if (!secretAccessKey) this.logger.warn('  - CLOUDFLARE_R2_SECRET_ACCESS_KEY ausente');
+      if (!this.bucket) this.logger.warn('  - CLOUDFLARE_R2_BUCKET_NAME ausente');
+      if (!this.publicUrl) this.logger.warn('  - CLOUDFLARE_R2_PUBLIC_URL ausente');
     }
   }
 
