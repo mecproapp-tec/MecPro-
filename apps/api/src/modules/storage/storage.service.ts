@@ -29,19 +29,13 @@ export class StorageService {
 
     if (hasAllConfig) {
       try {
-        // 🔧 Cria um agente HTTPS que ignora erros de certificado (necessário no Railway)
-        const agent = new Agent({
-          rejectUnauthorized: false,
-        });
-
+        const agent = new Agent({ rejectUnauthorized: false });
         this.s3Client = new S3Client({
           region: 'auto',
           endpoint,
           credentials: { accessKeyId, secretAccessKey },
           forcePathStyle: true,
-          requestHandler: new NodeHttpHandler({
-            httpsAgent: agent,
-          }),
+          requestHandler: new NodeHttpHandler({ httpsAgent: agent }),
         });
         this.useR2 = true;
         this.logger.log('✅ Cloudflare R2 configurado e ativo');
@@ -93,7 +87,6 @@ export class StorageService {
       } catch (error) {
         this.logger.error(`❌ Falha no upload R2: ${error.message}`);
         this.logger.error(`Detalhes: ${JSON.stringify(error)}`);
-        // Fallback para local
         return this.uploadPdfLocal(buffer, normalizedKey);
       }
     }
