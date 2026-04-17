@@ -103,6 +103,7 @@ export class EstimatesPdfService {
         };
       });
 
+      // 🔥 CORREÇÃO: adiciona companyAddress e companyLogo
       const html = template({
         estimateNumber: estimate.id,
         status: estimate.status === 'DRAFT' ? 'RASCUNHO' : estimate.status === 'SENT' ? 'ENVIADO' : 'APROVADO',
@@ -121,6 +122,8 @@ export class EstimatesPdfService {
         companyDocument: estimate.tenant?.documentNumber || 'CNPJ: --',
         companyPhone: estimate.tenant?.phone || '(11) 99999-9999',
         companyEmail: estimate.tenant?.email || 'contato@mecpro.com.br',
+        companyAddress: estimate.tenant?.address || '',
+        companyLogo: estimate.tenant?.logoUrl || '',
         issueDate: new Date().toLocaleDateString('pt-BR'),
         validUntil: new Date(Date.now() + 30 * 86400000).toLocaleDateString('pt-BR'),
       });

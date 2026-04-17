@@ -1,9 +1,9 @@
-import { Controller, Get, Put, Body, Param, UseGuards } from '@nestjs/common';
+// apps/api/src/modules/tenants/tenants.controller.ts
+import { Controller, Get, Put, Body, UseGuards, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { SessionGuard } from '../../auth/guards/session.guard';
-import { RolesGuard } from '../../auth/roles.guard';
-import { Roles } from '../../auth/roles.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { TenantsService } from './tenants.service';
 
 interface UserPayload {
   id: number;
@@ -15,35 +15,48 @@ interface UserPayload {
 @Controller('tenants')
 @UseGuards(JwtAuthGuard, SessionGuard)
 export class TenantsController {
+  constructor(private readonly tenantsService: TenantsService) {}
+
   @Get('me')
   async getMyTenant(@CurrentUser() user: UserPayload) {
+    const tenant = await this.tenantsService.getById(user.tenantId);
     return {
-      message: 'Meu tenant',
-      tenantId: user.tenantId,
-      role: user.role,
+      success: true,
+      data: {
+        nome: tenant.name,
+        tipoDocumento: tenant.documentType,
+        documento: tenant.documentNumber,
+        numero: this.extractNumberFromAddress(tenant.address),
+        endereco: this.extractStreetFromAddress(tenant.address),
+        telefone: tenant.phone,
+        email: tenant.email,
+        logo: tenant.logoUrl,
+      },
     };
   }
 
   @Put('me')
   async updateMyTenant(@Body() data: any, @CurrentUser() user: UserPayload) {
+    // Validação básica
+    if (!data.nome && !data.documento && !data.email && !data.telefone && !data.endereco && !data.numero && !data.logo) {
+      throw new BadRequestException('Nenhum dado para atualizar');
+    }
+    const updated = await this.tenantsService.update(user.tenantId, data);
     return {
-      message: 'Tenant atualizado',
-      tenantId: user.tenantId,
-      data,
+      success: true,
+      message: 'Dados da oficina atualizados com sucesso',
+      data: updated,
     };
   }
 
-  @Get()
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
-  async findAllTenants() {
-    return { message: 'Lista de todos os tenants' };
+  private extractNumberFromAddress(address?: string): string {
+    if (!address) return '';
+    const match = address.match(/\b(\d+)\b/);
+    return match ? match[1] : '';
   }
 
-  @Get(':id')
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
-  async findOneTenant(@Param('id') id: string) {
-    return { message: `Tenant ${id}` };
+  private extractStreetFromAddress(address?: string): string {
+    if (!address) return '';
+    return address.replace(/\s\d+$/, '').trim();
   }
 }

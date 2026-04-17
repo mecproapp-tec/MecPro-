@@ -1,4 +1,4 @@
-// src/modules/tenants/tenants.service.ts
+// apps/api/src/modules/tenants/tenants.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
@@ -6,30 +6,9 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 export class TenantsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(userRole?: string) {
-    const where: any = {};
-    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN') {
-      return [];
-    }
-    return this.prisma.tenant.findMany({
-      select: {
-        id: true,
-        name: true,
-        documentNumber: true,
-        email: true,
-        phone: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async getById(id: string, userRole?: string) {
-    const where: any = { id };
+  async getById(id: string) {
     const tenant = await this.prisma.tenant.findUnique({
-      where,
+      where: { id },
       select: {
         id: true,
         name: true,
@@ -46,32 +25,16 @@ export class TenantsService {
         updatedAt: true,
         paymentStatus: true,
         subscriptionId: true,
-        users: {                              // CORRIGIDO: User -> users (relação no schema)
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            createdAt: true,
-          },
+        users: {
+          select: { id: true, name: true, email: true, role: true, createdAt: true },
         },
-        subscriptions: {                      // CORRIGIDO: Subscription -> subscriptions (relação no schema)
-          select: {
-            id: true,
-            planName: true,
-            price: true,
-            status: true,
-            startDate: true,
-            endDate: true,
-            createdAt: true,
-          },
+        subscriptions: {
+          select: { id: true, planName: true, price: true, status: true, startDate: true, endDate: true, createdAt: true },
           orderBy: { createdAt: 'desc' },
         },
       },
     });
-    if (!tenant) {
-      throw new NotFoundException('Oficina não encontrada');
-    }
+    if (!tenant) throw new NotFoundException('Oficina não encontrada');
     return tenant;
   }
 
@@ -84,13 +47,19 @@ export class TenantsService {
     if (data.telefone !== undefined) updateData.phone = data.telefone;
     if (data.logo !== undefined) updateData.logoUrl = data.logo;
 
+    // Concatena endereço e número
     if (data.endereco !== undefined || data.numero !== undefined) {
       const endereco = data.endereco || '';
       const numero = data.numero || '';
       updateData.address = `${endereco} ${numero}`.trim();
     }
 
-    return this.prisma.tenant.update({
+    // Atualiza documentType se necessário (o frontend não envia tipoDocumento? mas pode)
+    if (data.tipoDocumento !== undefined) {
+      updateData.documentType = data.tipoDocumento;
+    }
+
+    const updated = await this.prisma.tenant.update({
       where: { id },
       data: updateData,
       select: {
@@ -101,21 +70,10 @@ export class TenantsService {
         phone: true,
         logoUrl: true,
         address: true,
+        documentType: true,
         updatedAt: true,
       },
     });
-  }
-
-  async findBySubscriptionId(subscriptionId: string) {
-    return this.prisma.tenant.findFirst({
-      where: { subscriptionId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        status: true,
-      },
-    });
+    return updated;
   }
 }

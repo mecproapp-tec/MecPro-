@@ -1,8 +1,9 @@
+// apps/web/src/pages/private/Configuracoes/Oficina.tsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiUpload, FiTrash2, FiSave } from "react-icons/fi";
+import { getTenant, updateTenant, TenantData, UpdateTenantData } from "../../../services/tenant";
 
-// Configuração de limites e dicas para cada tipo de documento
 const DOCUMENT_CONFIG = {
   CPF: { max: 11, hint: "000.000.000-00" },
   MEI: { max: 14, hint: "00.000.000/0000-00" },
@@ -15,8 +16,8 @@ const DOCUMENT_CONFIG = {
 
 interface OficinaData {
   nome: string;
-  tipoDocumento: "CPF" | "MEI" | "ME" | "EPP" | "LTDA" | "SLU" | "SA";
-  documento: string; // armazenado sem formatação (apenas números)
+  tipoDocumento: keyof typeof DOCUMENT_CONFIG;
+  documento: string;
   numero: string;
   endereco: string;
   telefone: string;
@@ -37,59 +38,63 @@ export default function OficinaConfig() {
     logo: "",
   });
   const [logoPreview, setLogoPreview] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("oficina");
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setOficina(parsed);
-      setLogoPreview(parsed.logo || "");
-    }
+    const fetchData = async () => {
+      try {
+        const data = await getTenant();
+        setOficina({
+          nome: data.nome || "",
+          tipoDocumento: (data.tipoDocumento as keyof typeof DOCUMENT_CONFIG) || "CPF",
+          documento: data.documento || "",
+          numero: data.numero || "",
+          endereco: data.endereco || "",
+          telefone: data.telefone || "",
+          email: data.email || "",
+          logo: data.logo || "",
+        });
+        setLogoPreview(data.logo || "");
+      } catch (error) {
+        console.error("Erro ao carregar dados da oficina:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
   }, []);
 
-  // Função para aplicar máscara no documento
   const formatDocumento = (value: string, tipo: string): string => {
-    // Remove tudo que não é dígito
     const digits = value.replace(/\D/g, "");
     const max = DOCUMENT_CONFIG[tipo as keyof typeof DOCUMENT_CONFIG]?.max || 14;
-
-    // Limita ao tamanho máximo
     const limited = digits.slice(0, max);
-
-    // Aplica máscara conforme o tipo
     if (tipo === "CPF") {
-      // 000.000.000-00
       return limited
         .replace(/^(\d{3})(\d)/, "$1.$2")
         .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
         .replace(/\.(\d{3})(\d)/, ".$1-$2")
-        .slice(0, 14); // tamanho máximo com máscara
+        .slice(0, 14);
     } else {
-      // CNPJ: 00.000.000/0000-00
       return limited
         .replace(/^(\d{2})(\d)/, "$1.$2")
         .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
         .replace(/\.(\d{3})(\d)/, ".$1/$2")
         .replace(/(\d{4})(\d)/, "$1-$2")
-        .slice(0, 18); // tamanho máximo com máscara
+        .slice(0, 18);
     }
   };
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-
     if (name === "tipoDocumento") {
-      // Ao mudar o tipo, reformata o documento atual (se houver)
       const novoDocumento = formatDocumento(oficina.documento, value);
       setOficina((prev) => ({
         ...prev,
-        tipoDocumento: value as OficinaData["tipoDocumento"],
-        documento: novoDocumento.replace(/\D/g, ""), // armazena só números
+        tipoDocumento: value as keyof typeof DOCUMENT_CONFIG,
+        documento: novoDocumento.replace(/\D/g, ""),
       }));
     } else if (name === "documento") {
-      // Aplica a máscara e armazena apenas números
       const rawValue = value.replace(/\D/g, "");
       const max = DOCUMENT_CONFIG[oficina.tipoDocumento].max;
       const limited = rawValue.slice(0, max);
@@ -117,15 +122,39 @@ export default function OficinaConfig() {
     setOficina((prev) => ({ ...prev, logo: "" }));
   };
 
-  const handleSave = () => {
-    localStorage.setItem("oficina", JSON.stringify(oficina));
-    alert("Dados da oficina salvos com sucesso!");
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload: UpdateTenantData = {
+        nome: oficina.nome,
+        tipoDocumento: oficina.tipoDocumento,
+        documento: oficina.documento,
+        numero: oficina.numero,
+        endereco: oficina.endereco,
+        telefone: oficina.telefone,
+        email: oficina.email,
+        logo: oficina.logo,
+      };
+      await updateTenant(payload);
+      alert("Dados da oficina salvos com sucesso!");
+    } catch (error) {
+      console.error("Erro ao salvar:", error);
+      alert("Erro ao salvar dados. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const config = DOCUMENT_CONFIG[oficina.tipoDocumento];
-
-  // Valor exibido no campo documento (formatado)
   const documentoDisplay = formatDocumento(oficina.documento, oficina.tipoDocumento);
+
+  if (loading) {
+    return (
+      <div style={{ background: "#000", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#00e5ff" }}>
+        Carregando...
+      </div>
+    );
+  }
 
   return (
     <div
@@ -138,7 +167,6 @@ export default function OficinaConfig() {
       }}
     >
       <div style={{ maxWidth: "800px", margin: "0 auto" }}>
-        {/* Cabeçalho com voltar */}
         <div style={{ display: "flex", alignItems: "center", marginBottom: "40px" }}>
           <button
             onClick={() => navigate(-1)}
@@ -158,8 +186,6 @@ export default function OficinaConfig() {
               boxShadow: "0 4px 12px rgba(0, 229, 255, 0.2)",
               marginRight: "16px",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#2a2a2a")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#1a1a1a")}
           >
             <FiArrowLeft />
           </button>
@@ -178,7 +204,6 @@ export default function OficinaConfig() {
           </h1>
         </div>
 
-        {/* Formulário */}
         <div
           style={{
             background: "#111",
@@ -188,11 +213,8 @@ export default function OficinaConfig() {
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {/* Nome da Oficina */}
             <div>
-              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                Nome da Oficina
-              </label>
+              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>Nome da Oficina</label>
               <input
                 type="text"
                 name="nome"
@@ -210,12 +232,9 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Tipo de Documento e Número do Documento */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "16px" }}>
               <div>
-                <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                  Tipo
-                </label>
+                <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>Tipo</label>
                 <select
                   name="tipoDocumento"
                   value={oficina.tipoDocumento}
@@ -230,25 +249,21 @@ export default function OficinaConfig() {
                     fontSize: "1rem",
                   }}
                 >
-                  <option value="CPF">CPF</option>
-                  <option value="MEI">MEI</option>
-                  <option value="ME">ME</option>
-                  <option value="EPP">EPP</option>
-                  <option value="LTDA">LTDA</option>
-                  <option value="SLU">SLU</option>
-                  <option value="SA">SA</option>
+                  {Object.keys(DOCUMENT_CONFIG).map((key) => (
+                    <option key={key} value={key}>
+                      {key}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                  Documento (número)
-                </label>
+                <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>Documento (número)</label>
                 <input
                   type="text"
                   name="documento"
                   value={documentoDisplay}
                   onChange={handleChange}
-                  maxLength={config.max + 5} // espaço extra para máscara
+                  maxLength={config.max + 5}
                   placeholder={config.hint}
                   style={{
                     width: "100%",
@@ -260,17 +275,12 @@ export default function OficinaConfig() {
                     fontSize: "1rem",
                   }}
                 />
-                <small style={{ color: "#a0a0a0", display: "block", marginTop: "4px" }}>
-                  Máx. {config.max} dígitos
-                </small>
+                <small style={{ color: "#a0a0a0", display: "block", marginTop: "4px" }}>Máx. {config.max} dígitos</small>
               </div>
             </div>
 
-            {/* Número (endereço) */}
             <div>
-              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                Número (endereço)
-              </label>
+              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>Número (endereço)</label>
               <input
                 type="text"
                 name="numero"
@@ -288,11 +298,8 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Endereço */}
             <div>
-              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                Endereço (rua, bairro, cidade)
-              </label>
+              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>Endereço (rua, bairro, cidade)</label>
               <input
                 type="text"
                 name="endereco"
@@ -310,11 +317,8 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Telefone */}
             <div>
-              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                Telefone
-              </label>
+              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>Telefone</label>
               <input
                 type="text"
                 name="telefone"
@@ -332,11 +336,8 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Email */}
             <div>
-              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                Email
-              </label>
+              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>Email</label>
               <input
                 type="email"
                 name="email"
@@ -354,19 +355,9 @@ export default function OficinaConfig() {
               />
             </div>
 
-            {/* Logo */}
             <div>
-              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>
-                Logo da Oficina
-              </label>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "16px",
-                  flexWrap: "wrap",
-                }}
-              >
+              <label style={{ color: "#a0a0a0", display: "block", marginBottom: "8px" }}>Logo da Oficina</label>
+              <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
                 <label
                   htmlFor="logo-upload"
                   style={{
@@ -381,18 +372,10 @@ export default function OficinaConfig() {
                     gap: "8px",
                     transition: "all 0.2s",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#2a2a2a")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "#1a1a1a")}
                 >
                   <FiUpload /> Selecionar imagem
                 </label>
-                <input
-                  id="logo-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleLogoUpload}
-                  style={{ display: "none" }}
-                />
+                <input id="logo-upload" type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: "none" }} />
                 {logoPreview && (
                   <button
                     onClick={handleRemoveLogo}
@@ -428,9 +411,9 @@ export default function OficinaConfig() {
               )}
             </div>
 
-            {/* Botão Salvar */}
             <button
               onClick={handleSave}
+              disabled={saving}
               style={{
                 background: "linear-gradient(135deg, #00e5ff, #0077ff)",
                 color: "#000",
@@ -447,11 +430,10 @@ export default function OficinaConfig() {
                 transition: "all 0.2s",
                 boxShadow: "0 8px 20px rgba(0, 229, 255, 0.3)",
                 marginTop: "16px",
+                opacity: saving ? 0.7 : 1,
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.02)")}
-              onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
             >
-              <FiSave size={20} /> Salvar Dados
+              <FiSave size={20} /> {saving ? "Salvando..." : "Salvar Dados"}
             </button>
           </div>
         </div>
