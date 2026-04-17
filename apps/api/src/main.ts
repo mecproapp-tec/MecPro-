@@ -27,9 +27,11 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Aumentar limite de payload (10MB)
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
+  // Helmet com configurações amigáveis para CORS
   app.use(
     helmet({
       crossOriginResourcePolicy: false,
@@ -38,7 +40,7 @@ async function bootstrap() {
     }),
   );
 
-  // Middleware para OPTIONS (preflight)
+  // Middleware manual para OPTIONS (preflight)
   app.use((req, res, next) => {
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
@@ -89,6 +91,7 @@ async function bootstrap() {
     optionsSuccessStatus: 200,
   });
 
+  // Validação global
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -97,10 +100,11 @@ async function bootstrap() {
     }),
   );
 
+  // Prefixo global para todas as rotas da API
   app.setGlobalPrefix('api');
 
   // ================= HEALTH CHECK =================
-  // Obtém a instância do Express para definir a rota raw
+  // Rota sem prefixo (compatibilidade)
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.get('/health', (req, res) => {
     res.status(200).json({
@@ -110,6 +114,16 @@ async function bootstrap() {
     });
   });
 
+  // Rota com prefixo /api (para seguir o padrão)
+  expressApp.get('/api/health', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    });
+  });
+
+  // Inicialização do servidor
   const port = process.env.PORT || 3000;
   const host = '0.0.0.0';
 
