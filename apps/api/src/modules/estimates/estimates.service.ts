@@ -282,7 +282,6 @@ export class EstimatesService {
       token = newShare.token;
     }
 
-    // 🔥 CORREÇÃO: manter o prefixo /api
     const baseUrl = process.env.API_URL || 'http://localhost:3000/api';
     const shareUrl = `${baseUrl}/public/estimates/share/${token}`;
     return { shareUrl };
@@ -294,7 +293,7 @@ export class EstimatesService {
     const { shareUrl } = await this.generateShareLink(id, tenantId);
 
     const cleanPhone = phoneNumber.replace(/\D/g, '');
-    const message = `📄 *ORÇAMENTO MECPRO #${estimate.id}*\n👤 *Cliente:* ${estimate.client?.name || '-'}\n🚗 *Veículo:* ${estimate.client?.vehicle || '-'}\n💰 *Total:* R$ ${Number(estimate.total).toFixed(2)}\n🔗 *Link:* ${shareUrl}\nMecPro - Sua oficina de confiança`;
+    const message = `📄 *ORÇAMENTO MECPRO #${estimate.id}*\n👤 *Cliente:* ${estimate.client?.name || '-'}\n🚗 *Veículo:* ${estimate.client?.vehicle || '-'}\n💰 *Total:* R$ ${Number(estimate.total).toFixed(2)}\n🔗 *Link:* ${shareUrl}\n${estimate.tenant?.name || 'MecPro'} - Sua oficina de confiança`;
     const whatsappUrl = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`;
     return { success: true, whatsappUrl };
   }

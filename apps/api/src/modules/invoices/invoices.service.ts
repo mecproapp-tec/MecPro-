@@ -176,7 +176,6 @@ export class InvoicesService {
       });
     }
 
-    // 🔥 CORREÇÃO: manter o prefixo /api
     const baseUrl = process.env.API_URL || 'http://localhost:3000/api';
     const shareUrl = `${baseUrl}/public/invoices/share/${token}`;
     return { shareUrl };
@@ -188,7 +187,7 @@ export class InvoicesService {
     const { shareUrl } = await this.generateShareLink(id, tenantId);
 
     const cleanPhone = phoneNumber.replace(/\D/g, '');
-    const message = `📄 *FATURA MECPRO #${invoice.number}*\n👤 *Cliente:* ${invoice.client?.name || '-'}\n🚗 *Veículo:* ${invoice.client?.vehicle || '-'}\n💰 *Total:* R$ ${Number(invoice.total).toFixed(2)}\n🔗 *Link:* ${shareUrl}\nMecPro - Gestão para Oficinas`;
+    const message = `📄 *FATURA MECPRO #${invoice.number}*\n👤 *Cliente:* ${invoice.client?.name || '-'}\n🚗 *Veículo:* ${invoice.client?.vehicle || '-'}\n💰 *Total:* R$ ${Number(invoice.total).toFixed(2)}\n🔗 *Link:* ${shareUrl}\n${invoice.tenant?.name || 'MecPro'} - Gestão para Oficinas`;
     const whatsappUrl = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`;
     return { success: true, whatsappUrl };
   }
