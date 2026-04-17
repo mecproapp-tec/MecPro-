@@ -176,9 +176,9 @@ export class InvoicesService {
       });
     }
 
+    // 🔥 CORREÇÃO: manter o prefixo /api
     const baseUrl = process.env.API_URL || 'http://localhost:3000/api';
-    const cleanBaseUrl = baseUrl.replace(/\/api$/, '');
-    const shareUrl = `${cleanBaseUrl}/public/invoices/share/${token}`;
+    const shareUrl = `${baseUrl}/public/invoices/share/${token}`;
     return { shareUrl };
   }
 
