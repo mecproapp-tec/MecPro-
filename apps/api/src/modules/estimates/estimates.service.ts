@@ -282,9 +282,9 @@ export class EstimatesService {
       token = newShare.token;
     }
 
+    // 🔥 CORREÇÃO: manter o prefixo /api
     const baseUrl = process.env.API_URL || 'http://localhost:3000/api';
-    const cleanBaseUrl = baseUrl.replace(/\/api$/, '');
-    const shareUrl = `${cleanBaseUrl}/public/estimates/share/${token}`;
+    const shareUrl = `${baseUrl}/public/estimates/share/${token}`;
     return { shareUrl };
   }
 
