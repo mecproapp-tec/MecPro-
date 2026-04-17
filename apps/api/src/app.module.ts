@@ -10,13 +10,11 @@ import { StorageModule } from './modules/storage/storage.module';
 import { PdfModule } from './modules/pdf/pdf.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
+import { PublicShareModule } from './modules/public-share/public-share.module'; 
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: '.env',
-    }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
     AuthModule,
     ClientsModule,
     EstimatesModule,
@@ -25,6 +23,7 @@ import { AppointmentsModule } from './modules/appointments/appointments.module';
     PdfModule,
     NotificationsModule,
     AppointmentsModule,
+    PublicShareModule,
   ],
   controllers: [AppController],
   providers: [AppService],

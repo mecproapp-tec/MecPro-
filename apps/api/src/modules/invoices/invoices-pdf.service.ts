@@ -1,4 +1,3 @@
-// apps/api/src/modules/invoices/invoices-pdf.service.ts
 import {
   Injectable,
   Logger,
@@ -14,12 +13,7 @@ export class InvoicesPdfService {
   private readonly logger = new Logger(InvoicesPdfService.name);
   private templateCache: HandlebarsTemplateDelegate | null = null;
 
-  constructor() {
-    this.logger.log('InvoicesPdfService inicializado');
-  }
-
   private async getBrowser() {
-    // PRIORIDADE 1: Chrome do Windows configurado no .env
     const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
     
     if (fs.existsSync(chromePath)) {
@@ -31,7 +25,6 @@ export class InvoicesPdfService {
       });
     }
     
-    // PRIORIDADE 2: Tentar caminho alternativo (32 bits)
     const altPath = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
     if (fs.existsSync(altPath)) {
       this.logger.log(`✅ Usando Chrome alternativo: ${altPath}`);
@@ -42,7 +35,6 @@ export class InvoicesPdfService {
       });
     }
     
-    // PRIORIDADE 3: Tentar Chromium baixado pelo puppeteer
     this.logger.warn('Chrome não encontrado, tentando Chromium padrão...');
     return puppeteer.launch({
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -51,38 +43,31 @@ export class InvoicesPdfService {
   }
 
   private loadTemplate(): HandlebarsTemplateDelegate {
-    if (this.templateCache) {
-      return this.templateCache;
+    if (this.templateCache) return this.templateCache;
+
+    let templatePath: string | null = null;
+    const possiblePaths = [
+      path.join(__dirname, 'templates', 'invoice-pdf.hbs'),
+      path.join(__dirname, 'invoice-pdf.hbs'),
+      path.join(process.cwd(), 'dist', 'modules', 'invoices', 'templates', 'invoice-pdf.hbs'),
+      path.join(process.cwd(), 'src', 'modules', 'invoices', 'templates', 'invoice-pdf.hbs'),
+    ];
+
+    for (const tryPath of possiblePaths) {
+      if (fs.existsSync(tryPath)) {
+        templatePath = tryPath;
+        this.logger.log(`Template encontrado em: ${tryPath}`);
+        break;
+      }
     }
 
-    try {
-      let templatePath: string | null = null;
-      const possiblePaths = [
-        path.join(__dirname, 'templates', 'invoice-pdf.hbs'),
-        path.join(__dirname, 'invoice-pdf.hbs'),
-        path.join(process.cwd(), 'dist', 'modules', 'invoices', 'templates', 'invoice-pdf.hbs'),
-        path.join(process.cwd(), 'src', 'modules', 'invoices', 'templates', 'invoice-pdf.hbs'),
-      ];
-
-      for (const tryPath of possiblePaths) {
-        if (fs.existsSync(tryPath)) {
-          templatePath = tryPath;
-          this.logger.log(`Template encontrado em: ${tryPath}`);
-          break;
-        }
-      }
-
-      if (!templatePath) {
-        throw new Error(`Template não encontrado. Procurado em: ${possiblePaths.join(', ')}`);
-      }
-
-      const templateHtml = fs.readFileSync(templatePath, 'utf-8');
-      this.templateCache = Handlebars.compile(templateHtml);
-      return this.templateCache;
-    } catch (error) {
-      this.logger.error('Erro ao carregar template de fatura', error);
-      throw new InternalServerErrorException('Erro ao carregar template de PDF');
+    if (!templatePath) {
+      throw new Error(`Template não encontrado`);
     }
+
+    const templateHtml = fs.readFileSync(templatePath, 'utf-8');
+    this.templateCache = Handlebars.compile(templateHtml);
+    return this.templateCache;
   }
 
   async generateInvoicePdf(invoice: any): Promise<Buffer> {
@@ -118,7 +103,6 @@ export class InvoicesPdfService {
       const html = compiledTemplate({
         invoiceNumber: invoice.number || invoice.id,
         status: invoice.status === 'PENDING' ? 'PENDENTE' : invoice.status === 'PAID' ? 'PAGA' : 'CANCELADA',
-        
         client: {
           name: client.name || 'Cliente não informado',
           phone: client.phone || '-',
@@ -127,24 +111,20 @@ export class InvoicesPdfService {
           document: client.document || '-',
           address: client.address || '-',
         },
-        
-        items: items,
-        
+        items,
         subtotal: subtotal.toFixed(2),
         total: invoice.total?.toFixed(2) || subtotal.toFixed(2),
-        
         companyName: tenant.name || 'MecPro',
         companyDocument: tenant.documentNumber || 'CNPJ: --',
         companyPhone: tenant.phone || '(11) 99999-9999',
         companyEmail: tenant.email || 'contato@mecpro.com.br',
-        
         issueDate: issueDateObj.toLocaleDateString('pt-BR'),
+        dueDate: new Date(Date.now() + 30 * 86400000).toLocaleDateString('pt-BR'),
       });
 
       this.logger.log(`Gerando PDF para fatura ${invoice.id} (${items.length} itens)`);
 
       browser = await this.getBrowser();
-
       const page = await browser.newPage();
       
       await page.setContent(html, {

@@ -10,6 +10,11 @@ export class PublicShareController {
   async getEstimateByToken(@Param('token') token: string, @Res() res: Response) {
     try {
       const data = await this.service.getPublicData(token);
+      if (data.pdfUrl) {
+        // Redireciona para o PDF (R2 ou local)
+        return res.redirect(HttpStatus.FOUND, data.pdfUrl);
+      }
+      // Fallback: retorna os dados em JSON se não houver PDF
       return res.status(HttpStatus.OK).json({ success: true, data });
     } catch (error) {
       return res.status(HttpStatus.NOT_FOUND).json({
@@ -23,6 +28,9 @@ export class PublicShareController {
   async getInvoiceByToken(@Param('token') token: string, @Res() res: Response) {
     try {
       const data = await this.service.getPublicData(token);
+      if (data.pdfUrl) {
+        return res.redirect(HttpStatus.FOUND, data.pdfUrl);
+      }
       return res.status(HttpStatus.OK).json({ success: true, data });
     } catch (error) {
       return res.status(HttpStatus.NOT_FOUND).json({

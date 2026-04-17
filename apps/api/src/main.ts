@@ -11,6 +11,7 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { json, urlencoded } from 'express';
+import { join } from 'path';
 
 async function bootstrap() {
   process.on('unhandledRejection', (reason) => {
@@ -82,6 +83,9 @@ async function bootstrap() {
     }),
   );
 
+  // ================= Arquivos estáticos (fallback local) =================
+  app.use('/api/storage', express.static(join(__dirname, '..', 'uploads', 'pdfs')));
+
   // ================= Validação global =================
   app.useGlobalPipes(
     new ValidationPipe({
@@ -96,7 +100,6 @@ async function bootstrap() {
 
   // ================= HEALTH CHECK =================
   const expressApp = app.getHttpAdapter().getInstance();
-  // Rota sem prefixo (compatibilidade)
   expressApp.get('/health', (req, res) => {
     res.status(200).json({
       status: 'ok',
@@ -104,7 +107,6 @@ async function bootstrap() {
       uptime: process.uptime(),
     });
   });
-  // Rota com prefixo /api (para seguir o padrão)
   expressApp.get('/api/health', (req, res) => {
     res.status(200).json({
       status: 'ok',
