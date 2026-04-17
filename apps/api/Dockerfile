@@ -1,5 +1,6 @@
 FROM node:20-bullseye AS builder
 
+# Instala dependências do sistema e o Chromium
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     fonts-liberation \
@@ -26,7 +27,12 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     wget \
     xdg-utils \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
+
+# Configura o Puppeteer para usar o Chromium do sistema
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
@@ -47,6 +53,7 @@ RUN mkdir -p dist/modules/estimates dist/modules/invoices && \
 
 FROM node:20-bullseye
 
+# Instala dependências e Chromium também no runtime
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     fonts-liberation \
@@ -73,10 +80,12 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     wget \
     xdg-utils \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
 
-# 🔥 IMPORTANTE: deixa Puppeteer usar o Chromium interno
+# Mesmas variáveis para o runtime
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
