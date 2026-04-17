@@ -1,8 +1,9 @@
+// apps/web/src/context/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect } from "react";
 import api from "../services/api";
 
 interface User {
-  id: string;
+  id: number;        // ou string, depende do seu backend – no schema é Int
   email: string;
   name: string;
   officeName?: string | null;
@@ -40,13 +41,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     const response = await api.post("/auth/login", { email, password });
 
-    // 🔥 CORREÇÃO AQUI
-    const { access_token, user } = response.data;
+    // 🔥 CORREÇÃO: a API retorna "accessToken" (camelCase), não "access_token"
+    const { accessToken, user } = response.data;
 
-    if (!access_token) throw new Error("Token não recebido da API");
+    if (!accessToken) throw new Error("Token não recebido da API");
     if (!user) throw new Error("Dados do usuário não recebidos");
 
-    localStorage.setItem("token", access_token);
+    localStorage.setItem("token", accessToken);
     localStorage.setItem("user", JSON.stringify(user));
 
     setUser(user);
