@@ -84,25 +84,35 @@ export class InvoicesPdfService {
       const tenant = invoice.tenant || {};
 
       let subtotal = 0;
+      let totalIss = 0;
+
       const items = (invoice.items || []).map((item: any) => {
         const quantity = Number(item.quantity) || 1;
         const price = Number(item.price) || 0;
-        const total = quantity * price;
-        subtotal += total;
+        const issPercent = Number(item.issPercent) || 0;
+
+        const subtotalItem = quantity * price;
+        const issValue = subtotalItem * (issPercent / 100);
+        const totalWithIss = subtotalItem + issValue;
+
+        subtotal += subtotalItem;
+        totalIss += issValue;
 
         return {
           description: item.description || '-',
-          quantity: quantity,
+          quantity,
           unitPrice: price.toFixed(2),
-          total: total.toFixed(2),
+          issPercent: issPercent.toFixed(1),
+          issValue: issValue.toFixed(2),
+          totalWithIss: totalWithIss.toFixed(2),
         };
       });
 
+      const total = subtotal + totalIss;
       const issueDateObj = invoice.createdAt ? new Date(invoice.createdAt) : new Date();
 
       const html = compiledTemplate({
         invoiceNumber: invoice.number || invoice.id,
-        status: invoice.status === 'PENDING' ? 'PENDENTE' : invoice.status === 'PAID' ? 'PAGA' : 'CANCELADA',
         client: {
           name: client.name || 'Cliente não informado',
           phone: client.phone || '-',
@@ -113,11 +123,14 @@ export class InvoicesPdfService {
         },
         items,
         subtotal: subtotal.toFixed(2),
-        total: invoice.total?.toFixed(2) || subtotal.toFixed(2),
+        totalIss: totalIss.toFixed(2),
+        total: total.toFixed(2),
         companyName: tenant.name || 'MecPro',
         companyDocument: tenant.documentNumber || 'CNPJ: --',
         companyPhone: tenant.phone || '(11) 99999-9999',
         companyEmail: tenant.email || 'contato@mecpro.com.br',
+        companyAddress: tenant.address || '',
+        companyLogo: tenant.logoUrl || '',
         issueDate: issueDateObj.toLocaleDateString('pt-BR'),
         dueDate: new Date(Date.now() + 30 * 86400000).toLocaleDateString('pt-BR'),
       });

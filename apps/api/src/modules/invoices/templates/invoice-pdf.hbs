@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<title>Fatura #{{invoiceNumber}}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -9,35 +10,26 @@
     background: #f0f4f8;
     padding: 40px 20px;
   }
-  .invoice-box {
-    max-width: 1000px;
+  .document {
+    max-width: 1100px;
     margin: auto;
     background: white;
-    border-radius: 24px;
+    border-radius: 16px;
     box-shadow: 0 20px 40px rgba(0,0,0,0.1);
     overflow: hidden;
   }
-  .invoice-header {
+  .header {
     background: linear-gradient(135deg, #0a0a0a 0%, #000000 100%);
     color: white;
     padding: 30px;
     text-align: center;
     border-bottom: 4px solid #00e5ff;
   }
-  .invoice-header h1 {
+  .header h1 {
     font-size: 28px;
     margin-bottom: 8px;
   }
-  .invoice-header .status {
-    display: inline-block;
-    background: rgba(0, 229, 255, 0.2);
-    padding: 5px 15px;
-    border-radius: 20px;
-    font-size: 12px;
-    color: #00e5ff;
-    margin-top: 10px;
-  }
-  .invoice-body {
+  .body {
     padding: 30px;
   }
   .company-info {
@@ -65,12 +57,15 @@
   .client-box h3 {
     color: #0d47a1;
     margin-bottom: 15px;
-    font-size: 16px;
   }
   .client-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
+  }
+  .client-item strong {
+    min-width: 80px;
+    display: inline-block;
   }
   .dates {
     display: flex;
@@ -80,12 +75,14 @@
     border-radius: 12px;
     margin-bottom: 25px;
     font-size: 13px;
+    font-weight: 500;
     color: #0d47a1;
   }
   table {
     width: 100%;
     border-collapse: collapse;
     margin: 20px 0;
+    font-size: 13px;
   }
   th {
     background: #0d47a1;
@@ -97,16 +94,21 @@
     padding: 12px;
     border-bottom: 1px solid #e0e0e0;
   }
-  .text-right {
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+  .totals {
+    margin-top: 25px;
     text-align: right;
+    border-top: 2px solid #e0e0e0;
+    padding-top: 20px;
   }
-  .total-final {
-    font-size: 24px;
+  .total-geral {
+    font-size: 22px;
     font-weight: bold;
     color: #00e5ff;
     background: #0a0a0a;
     display: inline-block;
-    padding: 8px 20px;
+    padding: 8px 24px;
     border-radius: 40px;
     margin-top: 10px;
   }
@@ -121,22 +123,20 @@
   .logo {
     max-width: 120px;
     max-height: 60px;
+    object-fit: contain;
     margin-bottom: 10px;
   }
 </style>
 </head>
 <body>
-<div class="invoice-box">
-  <div class="invoice-header">
+<div class="document">
+  <div class="header">
     <h1>FATURA Nº {{invoiceNumber}}</h1>
-    <div class="status">{{status}}</div>
   </div>
   
-  <div class="invoice-body">
+  <div class="body">
     <div class="company-info">
-      {{#if companyLogo}}
-        <img src="{{companyLogo}}" class="logo" alt="Logo">
-      {{/if}}
+      {{#if companyLogo}}<img src="{{companyLogo}}" class="logo" alt="Logo">{{/if}}
       <h2>{{companyName}}</h2>
       <p>{{companyDocument}} | {{companyPhone}}</p>
       <p>{{companyEmail}}</p>
@@ -164,9 +164,11 @@
       <thead>
         <tr>
           <th>Descrição</th>
-          <th class="text-right">Qtd</th>
-          <th class="text-right">Unitário</th>
-          <th class="text-right">Total</th>
+          <th class="text-right">Qtde</th>
+          <th class="text-right">Valor Unit.</th>
+          <th class="text-center">ISS %</th>
+          <th class="text-right">ISS Valor</th>
+          <th class="text-right">Total c/ ISS</th>
         </tr>
       </thead>
       <tbody>
@@ -175,20 +177,24 @@
           <td>{{description}}</td>
           <td class="text-right">{{quantity}}</td>
           <td class="text-right">R$ {{unitPrice}}</td>
-          <td class="text-right">R$ {{total}}</td>
+          <td class="text-center">{{issPercent}}%</td>
+          <td class="text-right">R$ {{issValue}}</td>
+          <td class="text-right">R$ {{totalWithIss}}</td>
         </tr>
         {{/each}}
       </tbody>
     </table>
     
-    <div class="totals" style="text-align: right; margin-top: 20px;">
-      <div class="total-final">TOTAL: R$ {{total}}</div>
+    <div class="totals">
+      <p>Subtotal (sem ISS): R$ {{subtotal}}</p>
+      <p>Total de ISS: R$ {{totalIss}}</p>
+      <div class="total-geral">TOTAL GERAL: R$ {{total}}</div>
     </div>
   </div>
   
   <div class="footer">
     <p>{{companyName}} - {{companyPhone}} | {{companyEmail}}</p>
-    <p>Este documento é uma fatura oficial.</p>
+    <p>Esta fatura é um documento oficial.</p>
   </div>
 </div>
 </body>

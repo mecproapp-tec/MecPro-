@@ -23,11 +23,7 @@ export class EstimatesPdfService {
         this.logger.log(`✅ Usando Chrome: ${chromePath}`);
         return await puppeteer.launch({
           executablePath: chromePath,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-          ],
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
           headless: true,
         });
       }
@@ -38,11 +34,7 @@ export class EstimatesPdfService {
         this.logger.log(`✅ Usando Chrome alternativo`);
         return await puppeteer.launch({
           executablePath: altPath,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-          ],
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
           headless: true,
         });
       }
@@ -90,23 +82,34 @@ export class EstimatesPdfService {
       const template = this.loadTemplate();
 
       let subtotal = 0;
+      let totalIss = 0;
+
       const items = (estimate.items || []).map((item: any) => {
         const quantity = Number(item.quantity) || 1;
         const price = Number(item.price) || 0;
-        const total = quantity * price;
-        subtotal += total;
+        const issPercent = Number(item.issPercent) || 0;
+
+        const subtotalItem = quantity * price;
+        const issValue = subtotalItem * (issPercent / 100);
+        const totalWithIss = subtotalItem + issValue;
+
+        subtotal += subtotalItem;
+        totalIss += issValue;
+
         return {
           description: item.description || '-',
           quantity,
           unitPrice: price.toFixed(2),
-          total: total.toFixed(2),
+          issPercent: issPercent.toFixed(1),
+          issValue: issValue.toFixed(2),
+          totalWithIss: totalWithIss.toFixed(2),
         };
       });
 
-      // 🔥 CORREÇÃO: adiciona companyAddress e companyLogo
+      const total = subtotal + totalIss;
+
       const html = template({
         estimateNumber: estimate.id,
-        status: estimate.status === 'DRAFT' ? 'RASCUNHO' : estimate.status === 'SENT' ? 'ENVIADO' : 'APROVADO',
         client: {
           name: estimate.client?.name || 'Cliente não informado',
           phone: estimate.client?.phone || '-',
@@ -117,7 +120,8 @@ export class EstimatesPdfService {
         },
         items,
         subtotal: subtotal.toFixed(2),
-        total: subtotal.toFixed(2),
+        totalIss: totalIss.toFixed(2),
+        total: total.toFixed(2),
         companyName: estimate.tenant?.name || 'MecPro',
         companyDocument: estimate.tenant?.documentNumber || 'CNPJ: --',
         companyPhone: estimate.tenant?.phone || '(11) 99999-9999',
