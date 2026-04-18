@@ -15,24 +15,38 @@ import api from "../../../services/api";
 
 type FilterType = "todos" | "PENDING" | "PAID" | "CANCELED";
 
-const displayStatusMap: Record<string, string> = {
-  PENDING: "Pendente",
-  PAID: "Paga",
-  CANCELED: "Cancelada",
+// 🔥 Mapeamento de status para exibição e cores
+const getStatusLabel = (status: string): string => {
+  switch (status) {
+    case "PENDING": return "Pendente";
+    case "PAID":    return "Paga";
+    case "CANCELED":return "Cancelada";
+    default:        return status;
+  }
 };
 
-function getStatusLabel(status: string): string {
-  return displayStatusMap[status] || status;
-}
-
-function getStatusColor(status: string): string {
+const getStatusColor = (status: string): string => {
   switch (status) {
-    case "PAID": return "#28a745";
-    case "PENDING": return "#ffc107";
-    case "CANCELED": return "#dc3545";
-    default: return "#6c757d";
+    case "PAID":     return "#00ff88";
+    case "PENDING":  return "#ffaa00";
+    case "CANCELED": return "#ff4444";
+    default:         return "#ffffff";
   }
-}
+};
+
+// 🔥 Função para calcular o total com ISS a partir dos itens
+const calculateTotalWithIss = (items?: Invoice["items"]): number => {
+  if (!items || !Array.isArray(items)) return 0;
+  return items.reduce((acc, item) => {
+    const price = Number(item.price) || 0;
+    const quantity = item.quantity || 1;
+    const subtotal = price * quantity;
+    const issPercent = Number(item.issPercent) || 0;
+    const issValue = subtotal * (issPercent / 100);
+    const totalItem = subtotal + issValue;
+    return acc + totalItem;
+  }, 0);
+};
 
 export default function Faturas() {
   const navigate = useNavigate();
@@ -56,14 +70,22 @@ export default function Faturas() {
         else faturasArray = [];
       }
 
-      const convertedFaturas = faturasArray.map(f => ({
-        ...f,
-        total: typeof f.total === 'string' ? parseFloat(f.total) : (f.total || 0),
-        items: (f.items || []).map(item => ({
+      // Converte tipos e recalcula total com ISS (garantia)
+      const convertedFaturas = faturasArray.map(f => {
+        const items = (f.items || []).map(item => ({
           ...item,
           price: typeof item.price === 'string' ? parseFloat(item.price) : item.price,
-        })),
-      }));
+          quantity: item.quantity ?? 1,
+          issPercent: item.issPercent ?? 0,
+        }));
+        const totalComIss = calculateTotalWithIss(items);
+        return {
+          ...f,
+          total: typeof f.total === 'string' ? parseFloat(f.total) : (f.total ?? totalComIss),
+          items,
+          totalComIss, // guarda o valor calculado (opcional)
+        };
+      });
 
       setFaturas(convertedFaturas);
       await carregarClientesFaltantes(convertedFaturas);
@@ -106,142 +128,119 @@ export default function Faturas() {
   }, []);
 
   const handleExcluir = async (id: number) => {
-    const confirmar = confirm("Tem certeza que deseja excluir esta fatura?");
-    if (!confirmar) return;
+    if (!confirm("Tem certeza que deseja excluir esta fatura?")) return;
     try {
       await deleteInvoice(id);
-      setFaturas(faturas.filter((f) => f.id !== id));
+      setFaturas(faturas.filter(f => f.id !== id));
+      toast.success("Fatura excluída com sucesso!");
     } catch (err: any) {
-      alert(err.response?.data?.message || "Erro ao excluir fatura");
+      toast.error(err.response?.data?.message || "Erro ao excluir fatura");
     }
   };
 
   const handleStatusChange = async (fatura: Invoice, novoStatus: "PENDING" | "PAID" | "CANCELED") => {
     if (!fatura.clientId || typeof fatura.clientId !== 'number' || fatura.clientId <= 0) {
-      alert("Esta fatura não possui um cliente válido. Corrija antes de alterar o status.");
+      toast.error("Esta fatura não possui um cliente válido.");
       return;
     }
     try {
-      const payload = { status: novoStatus };
-      await updateInvoice(fatura.id, payload);
+      await updateInvoice(fatura.id, { status: novoStatus });
       setFaturas(prev =>
         prev.map(f => (f.id === fatura.id ? { ...f, status: novoStatus } : f))
       );
       toast.success(`Status alterado para ${getStatusLabel(novoStatus)}`);
     } catch (err: any) {
-      const message = err.response?.data?.message || "Erro ao alterar status";
-      alert(message);
-      console.error("Erro ao atualizar status:", err);
+      toast.error(err.response?.data?.message || "Erro ao alterar status");
     }
   };
 
   const handleWhatsApp = async (invoice: Invoice) => {
     try {
-      setLoading(true);
       let phoneNumber = invoice.client?.phone;
       if (!phoneNumber) {
         phoneNumber = prompt('Digite o número do WhatsApp do cliente (com DDD):');
-        if (!phoneNumber) {
-          alert('Número de telefone é obrigatório para enviar via WhatsApp');
-          return;
-        }
+        if (!phoneNumber) return;
       }
       const response = await api.post(`/invoices/${invoice.id}/send-whatsapp`, { phoneNumber });
       if (response.data?.whatsappUrl) {
         window.open(response.data.whatsappUrl, '_blank');
-        toast.success('Link do WhatsApp gerado com sucesso!');
+        toast.success('Link do WhatsApp gerado!');
       } else {
-        throw new Error('Resposta inválida da API');
+        throw new Error('Resposta inválida');
       }
     } catch (error: any) {
-      console.error('Erro ao enviar via WhatsApp:', error);
-      const fallbackMessage =
-        `*FATURA ${invoice.number}*\n` +
-        `Cliente: ${invoice.client?.name}\n` +
-        `Valor: R$ ${Number(invoice.total).toFixed(2)}\n` +
-        `Status: ${getStatusLabel(invoice.status)}\n\n` +
-        `Acesse o sistema para mais detalhes: ${window.location.origin}/faturas/${invoice.id}`;
-      const phoneNumber = invoice.client?.phone || prompt('Digite o número do WhatsApp:');
-      if (phoneNumber) {
-        const cleanPhone = phoneNumber.replace(/\D/g, '');
-        const whatsappUrl = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(fallbackMessage)}`;
-        window.open(whatsappUrl, '_blank');
-        toast.info('Mensagem alternativa gerada (sem PDF)');
-      } else {
-        toast.error('Não foi possível gerar o link do WhatsApp');
-      }
-    } finally {
-      setLoading(false);
+      console.error(error);
+      toast.error('Erro ao gerar link do WhatsApp');
     }
   };
 
   const handlePDF = (fatura: Invoice) => {
     const oficina = JSON.parse(localStorage.getItem("oficina") || "{}");
     const cliente = fatura.client;
+    const totalComIss = calculateTotalWithIss(fatura.items);
     const win = window.open("", "_blank");
-    if (win) {
-      win.document.write(`
-        <html>
-          <head><title>Fatura ${fatura.number}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .header { display: flex; align-items: center; gap: 20px; margin-bottom: 30px; border-bottom: 2px solid #00e5ff; padding-bottom: 20px; }
-            .logo { max-width: 100px; max-height: 80px; object-fit: contain; }
-            .info { flex: 1; }
-            .info h2 { margin: 0 0 5px; color: #333; }
-            .info p { margin: 3px 0; color: #666; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
-            th { background-color: #f2f2f2; }
-            .valor { text-align: right; }
-            .total-row { font-weight: bold; background-color: #f9f9f9; }
-            .total-geral { font-size: 1.2rem; font-weight: bold; margin-top: 20px; text-align: right; }
-          </style>
-          </head>
-          <body>
-            <div class="header">
-              ${oficina.logo ? `<img src="${oficina.logo}" class="logo" />` : ""}
-              <div class="info">
-                <h2>${oficina.nome || "Oficina"}</h2>
-                <p>${oficina.tipoDocumento || ""} ${oficina.documento || ""}</p>
-                <p>${oficina.endereco || ""}, ${oficina.numero || ""}</p>
-                <p>Tel: ${oficina.telefone || ""} | Email: ${oficina.email || ""}</p>
-              </div>
+    if (!win) return;
+    win.document.write(`
+      <html>
+        <head><title>Fatura ${fatura.number}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          .header { display: flex; align-items: center; gap: 20px; margin-bottom: 30px; border-bottom: 2px solid #00e5ff; padding-bottom: 20px; }
+          .logo { max-width: 100px; max-height: 80px; object-fit: contain; }
+          .info { flex: 1; }
+          .info h2 { margin: 0 0 5px; color: #333; }
+          .info p { margin: 3px 0; color: #666; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+          th { background-color: #f2f2f2; }
+          .valor { text-align: right; }
+          .total-row { font-weight: bold; background-color: #f9f9f9; }
+          .total-geral { font-size: 1.2rem; font-weight: bold; margin-top: 20px; text-align: right; }
+        </style>
+        </head>
+        <body>
+          <div class="header">
+            ${oficina.logo ? `<img src="${oficina.logo}" class="logo" />` : ""}
+            <div class="info">
+              <h2>${oficina.nome || "Oficina"}</h2>
+              <p>${oficina.tipoDocumento || ""} ${oficina.documento || ""}</p>
+              <p>${oficina.endereco || ""}, ${oficina.numero || ""}</p>
+              <p>Tel: ${oficina.telefone || ""} | Email: ${oficina.email || ""}</p>
             </div>
-            <h1>Fatura</h1>
-            <p><strong>Número:</strong> ${fatura.number}</p>
-            <p><strong>Cliente:</strong> ${cliente?.name || "Cliente não encontrado"}</p>
-            <p><strong>Veículo:</strong> ${cliente ? getVehicleDisplay(cliente) : "Não informado"}</p>
-            <p><strong>Placa:</strong> ${cliente?.plate || ""}</p>
-            <p><strong>Data:</strong> ${new Date(fatura.createdAt).toLocaleDateString("pt-BR")}</p>
-            <p><strong>Status:</strong> ${getStatusLabel(fatura.status)}</p>
-            <div class="details"><h3>Itens</h3>
-            <table><thead><tr><th>Descrição</th><th class="valor">Qtd</th><th class="valor">Preço Unit.</th><th class="valor">ISS (%)</th><th class="valor">Total c/ ISS</th></tr></thead>
-            <tbody>${fatura.items.map(item => {
-              const iss = item.issPercent ? item.price * (item.issPercent / 100) : 0;
-              const totalItem = (item.price + iss) * (item.quantity || 1);
-              return `<tr><td>${item.description}</td><td class="valor">${item.quantity || 1}</td><td class="valor">${item.price.toFixed(2)}</td><td class="valor">${item.issPercent ? item.issPercent + '%' : '-'}</td><td class="valor">${totalItem.toFixed(2)}</td></tr>`;
-            }).join("")}</tbody>
-            <tfoot><tr class="total-row"><td colspan="4" style="text-align:right;"><strong>Total Geral</strong></td><td class="valor"><strong>${Number(fatura.total).toFixed(2)}</strong></td></tr></tfoot>
-            </table></div>
-            <div class="total-geral"><strong>Total: R$ ${Number(fatura.total).toFixed(2)}</strong></div>
-          </body>
-        </html>
-      `);
-      win.document.close();
-      win.print();
-    }
+          </div>
+          <h1>Fatura</h1>
+          <p><strong>Número:</strong> ${fatura.number}</p>
+          <p><strong>Cliente:</strong> ${cliente?.name || "Cliente não encontrado"}</p>
+          <p><strong>Veículo:</strong> ${cliente ? getVehicleDisplay(cliente) : "Não informado"}</p>
+          <p><strong>Placa:</strong> ${cliente?.plate || ""}</p>
+          <p><strong>Data:</strong> ${new Date(fatura.createdAt).toLocaleDateString("pt-BR")}</p>
+          <p><strong>Status:</strong> ${getStatusLabel(fatura.status)}</p>
+          <div class="details"><h3>Itens</h3>
+          <table><thead><tr><th>Descrição</th><th class="valor">Qtd</th><th class="valor">Preço Unit.</th><th class="valor">ISS (%)</th><th class="valor">Total c/ ISS</th></tr></thead>
+          <tbody>${fatura.items.map(item => {
+            const price = Number(item.price);
+            const quantity = item.quantity || 1;
+            const subtotal = price * quantity;
+            const issPercent = Number(item.issPercent) || 0;
+            const issValue = subtotal * (issPercent / 100);
+            const totalItem = subtotal + issValue;
+            return `<tr><td>${item.description}</td><td class="valor">${quantity}</td><td class="valor">${price.toFixed(2)}</td><td class="valor">${issPercent ? issPercent + '%' : '-'}</td><td class="valor">${totalItem.toFixed(2)}</td></tr>`;
+          }).join("")}</tbody>
+          <tfoot><tr class="total-row"><td colspan="4" class="valor"><strong>Total Geral</strong></td><td class="valor"><strong>${totalComIss.toFixed(2)}</strong></td></tr></tfoot>
+          </table></div>
+          <div class="total-geral"><strong>Total: R$ ${totalComIss.toFixed(2)}</strong></div>
+        </body>
+      </html>
+    `);
+    win.document.close();
+    win.print();
   };
 
-  const faturasFiltradas = faturas.filter((f) => filtro === "todos" ? true : f.status === filtro);
-  const totalGeral = faturasFiltradas.reduce((acc, f) => acc + Number(f.total), 0);
+  const faturasFiltradas = faturas.filter(f => filtro === "todos" ? true : f.status === filtro);
+  const totalGeral = faturasFiltradas.reduce((acc, f) => acc + calculateTotalWithIss(f.items), 0);
 
   if (loading) {
-    return (
-      <div style={styles.loadingContainer}>
-        <div style={styles.loading}>Carregando faturas...</div>
-      </div>
-    );
+    return <div style={styles.loadingContainer}><div style={styles.loading}>Carregando faturas...</div></div>;
   }
 
   if (error) {
@@ -314,14 +313,15 @@ export default function Faturas() {
               <tbody>
                 {faturasFiltradas.map((f, index) => {
                   const cliente = f.client;
+                  const totalComIss = calculateTotalWithIss(f.items);
                   return (
                     <tr key={f.id} style={{ ...styles.tableRow, background: index % 2 === 0 ? "#0f0f0f" : "#1a1a1a" }}>
-                      <td style={{ ...styles.td, fontWeight: "500", color: "#fff" }}>{f.number || f.id}</td>
+                      <td style={styles.td}>{f.number || f.id}</td>
                       <td style={styles.td}>{cliente?.name || "Cliente não encontrado"}</td>
                       <td style={styles.td}>{cliente ? getVehicleDisplay(cliente) : "Não informado"}</td>
                       <td style={styles.td}>{cliente?.plate || ""}</td>
                       <td style={styles.td}>{new Date(f.createdAt).toLocaleDateString("pt-BR")}</td>
-                      <td style={{ ...styles.td, textAlign: "right", color: "#00e5ff", fontWeight: "600" }}>R$ {Number(f.total).toFixed(2)}</td>
+                      <td style={{ ...styles.td, textAlign: "right", color: "#00e5ff", fontWeight: "600" }}>R$ {totalComIss.toFixed(2)}</td>
                       <td style={styles.td}>
                         <select
                           value={f.status}
