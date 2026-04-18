@@ -1,7 +1,5 @@
 
-this.logger.log(`R2 Endpoint: ${endpoint}`);
-this.logger.log(`R2 Key: ${accessKeyId?.slice(0, 5)}...`);
-this.logger.log(`Use R2: ${hasAllConfig}`);
+
 
 
 import {
@@ -32,6 +30,10 @@ export class StorageService {
   constructor(private configService: ConfigService) {
     this.localUploadPath = path.join(process.cwd(), 'uploads', 'pdfs');
     this.ensureLocalDirectory();
+
+    this.logger.log(`R2 Endpoint: ${endpoint}`);
+    this.logger.log(`R2 Key: ${accessKeyId?.slice(0, 5)}...`);
+    this.logger.log(`Use R2: ${hasAllConfig}`);
 
     const endpoint = this.configService.get<string>('CLOUDFLARE_R2_ENDPOINT');
     const accessKeyId = this.configService.get<string>('CLOUDFLARE_R2_ACCESS_KEY_ID');
